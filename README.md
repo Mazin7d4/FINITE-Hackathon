@@ -1,16 +1,53 @@
 # FINITE
 
-FINITE is an original Android MVP that helps a user set an intentional Instagram Reels limit. It uses an Android `AccessibilityService` to observe accessibility metadata from `com.instagram.android`, count likely Reel transitions during an active session, and show a `TYPE_ACCESSIBILITY_OVERLAY` reminder at the configured limit.
+FINITE is an original React Native Android MVP for setting an intentional Instagram Reels limit. The interface and session controls are TypeScript/React Native; the Android integration remains native Kotlin because Reel detection and accessibility overlays require Android system APIs.
 
-## Build
+## Architecture
 
-Requirements: JDK 17+ and Android SDK 35.
+- **React Native 0.88 / React 19.3** — dark session UI, limit input, permission setup, and live counter.
+- **Kotlin native module** — exposes session state, accessibility status, Instagram launch, and state events to JavaScript.
+- **Android `AccessibilityService`** — observes accessibility metadata only from `com.instagram.android` during an active session.
+- **Native accessibility overlay** — displays the limit reminder over Instagram with **I'm Done** and **Continue Anyway** actions.
+- **SharedPreferences** — keeps the limit, count, active state, and acknowledgement entirely on-device.
+
+No fake Instagram interface, backend, authentication, analytics, or simulated counting is used.
+
+## Requirements
+
+- Node.js 22.11 or newer
+- JDK 17 or newer
+- Android SDK 36
+- Android NDK `27.1.12297006` and CMake 3.22.1 (Gradle can install these after license acceptance)
+
+## Install dependencies
 
 ```powershell
-.\gradlew.bat assembleDebug
+npm install
 ```
 
-The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
+## Build a self-contained APK
+
+The release build embeds the JavaScript bundle and does not require Metro:
+
+```powershell
+cd android
+.\gradlew.bat assembleRelease
+```
+
+Output:
+
+```text
+android/app/build/outputs/apk/release/app-release.apk
+```
+
+The hackathon release currently uses the standard debug signing key. Replace it with a private release keystore before production distribution.
+
+For local React Native development:
+
+```powershell
+npm start
+npm run android
+```
 
 ## Run
 
@@ -19,26 +56,19 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
 3. Return to FINITE, select a limit, and tap **Start Session**.
 4. Open the Reels viewer in the real Instagram app and scroll normally.
 
-The service is scoped to accessibility events from the Instagram package and only counts while a FINITE session is active. Session state is stored in private `SharedPreferences`; no network or backend is used.
-
 ## Detection and diagnostics
 
-Instagram provides no official API for per-Reel transitions and can change its internal accessibility tree without notice. FINITE therefore uses conservative, best-effort signals:
+Instagram provides no official per-Reel transition API and can change its internal accessibility tree. FINITE uses conservative best-effort signals:
 
 - Reels/`clips` viewer resource IDs or a combination of a visible Reels label and viewer actions.
 - Vertical scroll events from a Reels viewer pager as the primary transition signal.
 - A twice-confirmed change in visible Reel identity metadata as a fallback.
-- Separate debounce windows to suppress duplicated accessibility events.
+- Separate debounce windows to suppress duplicate accessibility events.
 
-The app never substitutes timer-based or manual simulated counts. To inspect the metadata classifier while testing on a device:
+Inspect classifier behavior on a connected device with:
 
 ```powershell
 adb logcat -s FINITE
 ```
 
-Look for event type, viewer evidence, action count, fingerprint, and the reason attached to each increment. If Instagram changes its tree, these logs are the starting point for updating the classifier in `ReelDetector.kt`.
-
-## Verification status
-
-The Gradle build can be verified locally. The complete five-Reel acceptance test requires a physical Android device with the real Instagram app and must not be considered passed until that test has been performed.
-
+The log records event types, viewer evidence, fingerprints, and the reason attached to every increment. The five-Reel acceptance test must be performed on a physical Android device with the installed Instagram version before claiming exact detection reliability.

@@ -7,4 +7,13 @@ local.properties
 captures/
 .externalNativeBuild/
 .cxx/
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.metro-health-check*
+coverage/
+*.jsbundle
+*.keystore
+!debug.keystore
+.kotlin/
 
