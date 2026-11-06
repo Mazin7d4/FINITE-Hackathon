@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.provider.Settings
+import android.util.Log
 import androidx.core.content.ContextCompat
 import app.finite.accessibility.FiniteAccessibilityService
 import app.finite.data.SessionState
@@ -92,10 +93,30 @@ class FiniteNativeModule(
     }
 
     @ReactMethod
-    fun openAccessibilitySettings() {
-        reactContext.startActivity(
-            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+    fun openAccessibilitySettings(promise: Promise) {
+        val candidates = listOf(
+            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
+            Intent(Settings.ACTION_SETTINGS),
+        )
+        var lastFailure: RuntimeException? = null
+
+        for (candidate in candidates) {
+            candidate.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (candidate.resolveActivity(reactContext.packageManager) == null) continue
+            try {
+                reactContext.startActivity(candidate)
+                promise.resolve(null)
+                return
+            } catch (error: RuntimeException) {
+                lastFailure = error
+                Log.w(TAG, "Unable to open ${candidate.action}", error)
+            }
+        }
+
+        promise.reject(
+            "SETTINGS_UNAVAILABLE",
+            "Android accessibility settings are unavailable on this device",
+            lastFailure,
         )
     }
 
@@ -140,5 +161,6 @@ class FiniteNativeModule(
     companion object {
         private const val EVENT_STATE_CHANGED = "FiniteSessionChanged"
         private const val INSTAGRAM_PACKAGE = "com.instagram.android"
+        private const val TAG = "FINITE"
     }
 }
