@@ -26,7 +26,7 @@ type FiniteNativeModule = {
   getState(): Promise<SessionState>;
   startSession(limit: number): Promise<SessionState>;
   endSession(): Promise<SessionState>;
-  openAccessibilitySettings(): void;
+  openAccessibilitySettings(): Promise<void>;
   addListener(eventName: string): void;
   removeListeners(count: number): void;
 };
@@ -82,6 +82,18 @@ function FiniteApp(): React.JSX.Element {
     return 'You reached your plan';
   }, [session]);
 
+  const openAccessibilitySettings = useCallback(async () => {
+    try {
+      await FiniteNative.openAccessibilitySettings();
+    } catch (error) {
+      Alert.alert(
+        'Could not open Settings',
+        'Open Android Settings, choose Accessibility, then enable FINITE Reel Counter.',
+      );
+      console.warn('Unable to open accessibility settings', error);
+    }
+  }, []);
+
   const startSession = async () => {
     if (!validLimit) return;
     if (!session.accessibilityEnabled) {
@@ -90,7 +102,7 @@ function FiniteApp(): React.JSX.Element {
         'FINITE needs accessibility access to identify Reel transitions on-device.',
         [
           {text: 'Cancel', style: 'cancel'},
-          {text: 'Open Settings', onPress: FiniteNative.openAccessibilitySettings},
+          {text: 'Open Settings', onPress: openAccessibilitySettings},
         ],
       );
       return;
@@ -194,7 +206,7 @@ function FiniteApp(): React.JSX.Element {
           </View>
           <Pressable
             accessibilityRole="button"
-            onPress={FiniteNative.openAccessibilitySettings}
+            onPress={openAccessibilitySettings}
             hitSlop={12}>
             <Text style={styles.settingsLink}>
               {session.accessibilityEnabled ? 'Settings' : 'Enable'}
