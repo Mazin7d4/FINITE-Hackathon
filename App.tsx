@@ -1,17 +1,13 @@
-import { Text, View } from "react-native";
+import React, { useState } from 'react';
+import LoginScreen from './screens/login';
+import FiniteScreen from './screens/FiniteScreen';
 
-export default function App() {
-  return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: "#C3DDC5",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <Text style={{ fontSize: 24, color: "#162B39" }}>It works</Text>
-    </View>
-  );
+export default function App(): React.JSX.Element {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  if (!isLoggedIn) {
+    return <LoginScreen onLogin={() => setIsLoggedIn(true)} />;
+  }
+
+  return <FiniteScreen />;
 }
-
