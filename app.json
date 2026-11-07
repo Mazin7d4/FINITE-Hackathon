@@ -1,1 +1,6 @@
-{"name": "FINITE", "displayName": "FINITE"}
+{
+  "expo": {
+    "name": "FINITE",
+    "slug": "finite"
+  }
+}
