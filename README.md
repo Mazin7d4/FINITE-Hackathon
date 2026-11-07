@@ -2,6 +2,13 @@
 
 FINITE is a React Native Android MVP for setting one shared Instagram Reels and YouTube Shorts limit. The interface and session controls are TypeScript/React Native; detection and overlays use native Kotlin and Android accessibility APIs. Counting is best effort.
 
+## For UI devs
+
+- Run it: `npm install`, then `npx expo run:android` with a phone (USB debugging on) or an emulator. The first run builds the native app and takes a few minutes; after that, `npx expo start` reloads your JS changes.
+- Expo Go won't work. FINITE has custom Kotlin code (the accessibility service and native module), so it needs this dev build.
+- New screens go in `src/screens/`. `App.tsx` shows the login screen first, then `FiniteScreen` (session and counter).
+- You only need Android Studio's SDK and JDK 17; you don't need to touch the Kotlin code for UI work.
+
 ## Architecture
 
 - **React Native 0.88 / React 19.3** — dark session UI, limit input, permission setup, and live counter.
@@ -16,7 +23,7 @@ No fake Instagram interface, backend, authentication, analytics, or simulated co
 
 - Node.js 22.11 or newer
 - JDK 17 or newer
-- Android SDK 36
+- Android SDK 37 (Expo SDK 58 modules need compileSdk 37)
 - Android NDK `27.1.12297006` and CMake 3.22.1 (Gradle can install these after license acceptance)
 
 ## Install dependencies
