@@ -16,4 +16,5 @@ coverage/
 *.keystore
 !debug.keystore
 .kotlin/
+.expo/
 
