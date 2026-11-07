@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">FINITE</string>
-    <string name="accessibility_service_description">Counts Instagram Reel transitions only during a FINITE session and shows your on-device limit reminder.</string>
+    <string name="accessibility_service_description">Counts Instagram Reels and YouTube Shorts during an active FINITE session and shows your on-device limit reminder. Counting is best effort.</string>
 </resources>
 

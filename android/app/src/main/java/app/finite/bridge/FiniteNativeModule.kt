@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Handler
 import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -66,24 +67,41 @@ class FiniteNativeModule(
     fun startSession(limit: Double, promise: Promise) {
         val safeLimit = limit.toInt()
         if (safeLimit !in SessionStore.MIN_LIMIT..SessionStore.MAX_LIMIT) {
-            promise.reject("INVALID_LIMIT", "Choose a Reel limit from 1 to 100")
+            promise.reject("INVALID_LIMIT", "Choose a Reels and Shorts limit from 1 to 100")
             return
         }
         if (!isAccessibilityEnabled()) {
             promise.reject("ACCESSIBILITY_DISABLED", "FINITE accessibility access is disabled")
             return
         }
-        val instagramIntent = reactContext.packageManager
+        val launchIntent = reactContext.packageManager
             .getLaunchIntentForPackage(INSTAGRAM_PACKAGE)
-        if (instagramIntent == null) {
-            promise.reject("INSTAGRAM_MISSING", "Instagram is not installed")
+            ?: reactContext.packageManager.getLaunchIntentForPackage(YOUTUBE_PACKAGE)
+        if (launchIntent == null) {
+            promise.reject("SUPPORTED_APP_MISSING", "Neither Instagram nor YouTube is installed")
             return
         }
 
-        store.start(safeLimit)
-        promise.resolve(stateMap())
-        instagramIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        reactContext.startActivity(instagramIntent)
+        // Wait for the service's explicit reset receiver before starting the new session.
+        // A service created later already starts with fresh detector state.
+        reactContext.sendOrderedBroadcast(
+            Intent(FiniteAccessibilityService.ACTION_RESET_DETECTION).setPackage(reactContext.packageName),
+            null,
+            object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    store.start(safeLimit)
+                    try {
+                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        reactContext.startActivity(launchIntent)
+                        promise.resolve(stateMap())
+                    } catch (error: RuntimeException) {
+                        store.end("Unable to launch Instagram or YouTube")
+                        promise.reject("APP_LAUNCH_FAILED", "Unable to launch the selected app", error)
+                    }
+                }
+            },
+            Handler(reactContext.mainLooper), 0, null, null,
+        )
     }
 
     @ReactMethod
@@ -161,6 +179,7 @@ class FiniteNativeModule(
     companion object {
         private const val EVENT_STATE_CHANGED = "FiniteSessionChanged"
         private const val INSTAGRAM_PACKAGE = "com.instagram.android"
+        private const val YOUTUBE_PACKAGE = "com.google.android.youtube"
         private const val TAG = "FINITE"
     }
 }
