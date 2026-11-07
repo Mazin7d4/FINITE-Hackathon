@@ -74,7 +74,7 @@ function FiniteApp(): React.JSX.Element {
   }, [refreshState]);
 
   const sessionCaption = useMemo(() => {
-    if (session.count === 0) return 'Open Reels and start scrolling';
+    if (session.count === 0) return 'Open Reels or Shorts and start scrolling';
     if (session.count < session.limit) {
       return `${session.limit - session.count} left in your plan`;
     }
@@ -88,7 +88,7 @@ function FiniteApp(): React.JSX.Element {
     } catch (error) {
       Alert.alert(
         'Could not open Settings',
-        'Open Android Settings, choose Accessibility, then enable FINITE Reel Counter.',
+        'Open Android Settings, choose Accessibility, then enable FINITE Reels and Shorts Counter.',
       );
       console.warn('Unable to open accessibility settings', error);
     }
@@ -99,7 +99,7 @@ function FiniteApp(): React.JSX.Element {
     if (!session.accessibilityEnabled) {
       Alert.alert(
         'Enable accessibility first',
-        'FINITE needs accessibility access to identify Reel transitions on-device.',
+        'FINITE needs accessibility access to identify Reels and Shorts on-device.',
         [
           {text: 'Cancel', style: 'cancel'},
           {text: 'Open Settings', onPress: openAccessibilitySettings},
@@ -139,13 +139,13 @@ function FiniteApp(): React.JSX.Element {
         </Text>
         <Text style={styles.intro}>
           {session.active
-            ? 'FINITE is watching for distinct Reel transitions on this device.'
-            : 'Choose the number of Reels you actually want to watch. We’ll remind you when you arrive.'}
+            ? 'Reels and Shorts share one counter. Switch between Instagram and YouTube anytime.'
+            : 'Choose your combined Reels and Shorts limit. We’ll remind you when you arrive.'}
         </Text>
 
         {session.active ? (
           <View style={styles.card}>
-            <Text style={styles.eyebrow}>REELS WATCHED</Text>
+            <Text style={styles.eyebrow}>REELS + SHORTS WATCHED</Text>
             <Text style={styles.counter}>{session.count}/{session.limit}</Text>
             <Text style={styles.caption}>{sessionCaption}</Text>
             <Pressable
@@ -157,10 +157,10 @@ function FiniteApp(): React.JSX.Element {
           </View>
         ) : (
           <View style={styles.card}>
-            <Text style={styles.eyebrow}>REEL LIMIT</Text>
+            <Text style={styles.eyebrow}>REELS + SHORTS LIMIT</Text>
             <View style={styles.inputRow}>
               <TextInput
-                accessibilityLabel="Reel limit"
+                accessibilityLabel="Combined Reels and Shorts limit"
                 value={limitText}
                 onChangeText={value => {
                   if (/^\d{0,3}$/.test(value)) setLimitText(value);
@@ -172,7 +172,7 @@ function FiniteApp(): React.JSX.Element {
                 placeholder="5"
                 placeholderTextColor="#606268"
               />
-              <Text style={styles.inputSuffix}>Reels</Text>
+              <Text style={styles.inputSuffix}>Videos</Text>
             </View>
             {!validLimit && <Text style={styles.error}>Enter a number from 1 to 100</Text>}
             <Pressable
@@ -200,8 +200,8 @@ function FiniteApp(): React.JSX.Element {
             </Text>
             <Text style={styles.permissionSubtitle}>
               {session.accessibilityEnabled
-                ? 'On-device Reel detection is enabled'
-                : 'Allow FINITE to identify Reel transitions'}
+                ? 'On-device Reels and Shorts detection is enabled'
+                : 'Allow FINITE to identify Reels and Shorts'}
             </Text>
           </View>
           <Pressable
@@ -217,7 +217,7 @@ function FiniteApp(): React.JSX.Element {
         <Text style={styles.statusLabel}>DETECTOR STATUS</Text>
         <Text style={styles.detectorStatus}>{session.detectorStatus}</Text>
         <Text style={styles.privacyCopy}>
-          Counting is best-effort because Instagram exposes no official per-Reel API.
+          Reels and Shorts counting is best-effort and may miss or repeat a count.
           FINITE processes accessibility metadata on-device and stores no browsing content.
         </Text>
       </ScrollView>

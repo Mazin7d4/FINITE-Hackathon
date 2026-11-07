@@ -7,6 +7,6 @@
     android:canPerformGestures="false"
     android:description="@string/accessibility_service_description"
     android:notificationTimeout="80"
-    android:packageNames="com.instagram.android"
+    android:packageNames="com.instagram.android,com.google.android.youtube"
     android:settingsActivity="app.finite.MainActivity" />
 
