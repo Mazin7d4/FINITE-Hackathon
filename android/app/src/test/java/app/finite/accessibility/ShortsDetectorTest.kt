@@ -61,6 +61,41 @@ class ShortsDetectorTest {
         verify(caption, never()).contentDescription
     }
 
+    @Test fun fingerprintPopulatedFromChannelNameInViewer() {
+        val channel = nodeWithText("reel_player_header_text", "some_channel")
+        val obs = detector.inspect(null, root(viewerNodes() + channel))
+        assertEquals(ShortsViewer.CONFIRMED, obs.viewer)
+        assertNotNull("fingerprint must be populated when channel name is visible", obs.fingerprint)
+    }
+
+    @Test fun fingerprintAbsentWhenNoIdentityNodesPresent() {
+        val obs = detector.inspect(null, root(viewerNodes()))
+        assertEquals(ShortsViewer.CONFIRMED, obs.viewer)
+        assertNull("fingerprint must be null when no identity IDs present", obs.fingerprint)
+    }
+
+    @Test fun identicalIdentityNodesProduceIdenticalFingerprints() {
+        val obs1 = detector.inspect(null, root(viewerNodes() + nodeWithText("reel_title", "My Short Title")))
+        val obs2 = detector.inspect(null, root(viewerNodes() + nodeWithText("reel_title", "My Short Title")))
+        assertNotNull(obs1.fingerprint)
+        assertEquals("same visible title must produce same fingerprint", obs1.fingerprint, obs2.fingerprint)
+    }
+
+    @Test fun differentIdentityNodesPproduceDifferentFingerprints() {
+        val obs1 = detector.inspect(null, root(viewerNodes() + nodeWithText("reel_player_header_text", "creator_alpha")))
+        val obs2 = detector.inspect(null, root(viewerNodes() + nodeWithText("reel_player_header_text", "creator_beta")))
+        assertNotNull(obs1.fingerprint)
+        assertNotNull(obs2.fingerprint)
+        assertNotEquals("different channel names must produce different fingerprints", obs1.fingerprint, obs2.fingerprint)
+    }
+
+    @Test fun engagementCountsAndGenericLabelsAreExcludedFromFingerprint() {
+        // A node with a pure-numeric engagement count must not produce a fingerprint.
+        val countNode = nodeWithText("reel_player_header_text", "1234")
+        val obs = detector.inspect(null, root(viewerNodes() + countNode))
+        assertNull("pure numeric count must not contribute to fingerprint", obs.fingerprint)
+    }
+
     private fun viewerNodes() = listOf(node("reel_watch_fragment_root"),
         node("reel_watch_player"), node("reel_recycler"))
 
@@ -76,6 +111,12 @@ class ShortsDetectorTest {
         val node = mock(AccessibilityNodeInfo::class.java)
         `when`(node.viewIdResourceName).thenReturn("com.google.android.youtube:id/$id")
         `when`(node.isVisibleToUser).thenReturn(true)
+        return node
+    }
+
+    private fun nodeWithText(id: String, text: String): AccessibilityNodeInfo {
+        val node = node(id)
+        `when`(node.text).thenReturn(text)
         return node
     }
 

@@ -28,6 +28,7 @@ class FiniteAccessibilityService : AccessibilityService() {
     private lateinit var store: SessionStore
     private lateinit var windowManager: WindowManager
     private val detector = ReelDetector()
+    private val reelCounter = ReelCounter()
     private val shortsDetector = ShortsDetector()
     private val shortsCounter = ShortsCounter()
     private val handler = Handler(Looper.getMainLooper())
@@ -52,11 +53,6 @@ class FiniteAccessibilityService : AccessibilityService() {
     }
 
     private var overlay: View? = null
-    private var wasInViewer = false
-    private var lastFingerprint: String? = null
-    private var pendingFingerprint: String? = null
-    private var pendingFingerprintHits = 0
-    private var lastCountAt = 0L
     private var lastDiagnosticAt = 0L
 
     override fun onCreate() {
@@ -80,16 +76,17 @@ class FiniteAccessibilityService : AccessibilityService() {
         val packageName = event.packageName?.toString()
         if (packageName != INSTAGRAM_PACKAGE && packageName != YOUTUBE_PACKAGE) return
         val session = store.snapshot()
-        if (!session.active) {
-            resetDetectionState()
+        if (!session.active || overlay != null) {
+            if (!session.active) resetDetectionState()
             return
         }
 
         if (lastPackage != packageName) {
             handler.removeCallbacks(shortsFollowUp)
             shortsCounter.suspend()
-            pendingFingerprint = null
-            pendingFingerprintHits = 0
+            if (lastPackage == INSTAGRAM_PACKAGE) {
+                reelCounter.platformSuspend(SystemClock.elapsedRealtime())
+            }
             lastPackage = packageName
         }
         if (packageName == YOUTUBE_PACKAGE) {
@@ -100,67 +97,15 @@ class FiniteAccessibilityService : AccessibilityService() {
         val detection = detector.inspect(event, rootInActiveWindow)
         logDiagnostic(event, detection)
 
-        if (!detection.isReelsViewer) {
-            if (wasInViewer) {
-                store.updateDetectorStatus("Instagram open — outside the Reels viewer")
-            }
-            wasInViewer = false
-            pendingFingerprint = null
-            pendingFingerprintHits = 0
-            return
-        }
-
         val now = SystemClock.elapsedRealtime()
-        if (!wasInViewer) {
-            wasInViewer = true
-            lastFingerprint = detection.fingerprint
-            pendingFingerprint = null
-            pendingFingerprintHits = 0
-            if (detection.strongEvidence) {
-                countReel("Reels viewer opened", now)
-            } else {
-                store.updateDetectorStatus("Reels viewer candidate — confirming identity")
-            }
-            return
+        val decision = reelCounter.update(detection, now)
+        if (decision.incrementReason != null) {
+            recordCount(decision.incrementReason)
+        } else if (!detection.isReelsViewer) {
+            store.updateDetectorStatus("Instagram open — outside the Reels viewer")
+        } else if (decision.detail.startsWith("Reels viewer candidate")) {
+            store.updateDetectorStatus("Reels viewer candidate — confirming identity")
         }
-
-        val primaryScrollSignal = event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED &&
-            detection.sourceLooksScrollable
-        if (primaryScrollSignal && now - lastCountAt >= SCROLL_DEBOUNCE_MS) {
-            lastFingerprint = detection.fingerprint ?: lastFingerprint
-            pendingFingerprint = null
-            pendingFingerprintHits = 0
-            countReel("vertical Reel transition", now)
-            return
-        }
-
-        val fingerprint = detection.fingerprint ?: return
-        if (fingerprint == lastFingerprint) {
-            pendingFingerprint = null
-            pendingFingerprintHits = 0
-            return
-        }
-
-        if (pendingFingerprint == fingerprint) {
-            pendingFingerprintHits += 1
-        } else {
-            pendingFingerprint = fingerprint
-            pendingFingerprintHits = 1
-        }
-
-        if (pendingFingerprintHits >= FINGERPRINT_CONFIRMATIONS &&
-            now - lastCountAt >= FINGERPRINT_DEBOUNCE_MS
-        ) {
-            lastFingerprint = fingerprint
-            pendingFingerprint = null
-            pendingFingerprintHits = 0
-            countReel("confirmed Reel identity change", now)
-        }
-    }
-
-    private fun countReel(reason: String, now: Long) {
-        lastCountAt = now
-        recordCount(reason)
     }
 
     private fun handleShorts(event: AccessibilityEvent?) {
@@ -183,7 +128,10 @@ class FiniteAccessibilityService : AccessibilityService() {
                 "scroll=${observation.scroll} decision=${decision.detail} ${observation.summary}")
         }
         decision.incrementReason?.let(::recordCount)
-        if (overlay == null) shortsCounter.nextCheckDelay(now)?.let { handler.postDelayed(shortsFollowUp, it) }
+        if (overlay == null) {
+            handler.removeCallbacks(shortsFollowUp)
+            shortsCounter.nextCheckDelay(now)?.let { handler.postDelayed(shortsFollowUp, it) }
+        }
     }
 
     private fun recordCount(reason: String) {
@@ -306,12 +254,8 @@ class FiniteAccessibilityService : AccessibilityService() {
     private fun resetDetectionState() {
         handler.removeCallbacks(shortsFollowUp)
         shortsCounter.reset()
+        reelCounter.reset()
         lastPackage = null
-        wasInViewer = false
-        lastFingerprint = null
-        pendingFingerprint = null
-        pendingFingerprintHits = 0
-        lastCountAt = 0L
     }
 
     override fun onInterrupt() {
@@ -338,9 +282,6 @@ class FiniteAccessibilityService : AccessibilityService() {
         private const val TAG = "FINITE"
         private const val INSTAGRAM_PACKAGE = "com.instagram.android"
         private const val YOUTUBE_PACKAGE = "com.google.android.youtube"
-        private const val SCROLL_DEBOUNCE_MS = 700L
-        private const val FINGERPRINT_DEBOUNCE_MS = 1_800L
-        private const val FINGERPRINT_CONFIRMATIONS = 2
         private const val DIAGNOSTIC_THROTTLE_MS = 1_500L
     }
 }

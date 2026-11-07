@@ -25,8 +25,8 @@ class ShortsSessionIntegrationTest {
             val first = counter.update(ShortsObservation(ShortsViewer.CONFIRMED), 0).incrementReason!!
             assertFalse(youtube.increment(first).shouldShowLimit)
             counter.update(ShortsObservation(ShortsViewer.CONFIRMED, scroll =
-                ShortsScroll(1_000, "reel_player_underlay", -550, -550, relativeOffset = true)), 1_000)
-            val next = counter.update(ShortsObservation(ShortsViewer.CONFIRMED), 1_200).incrementReason!!
+                ShortsScroll(1_500, "reel_player_underlay", -550, -550, relativeOffset = true)), 1_500)
+            val next = counter.update(ShortsObservation(ShortsViewer.CONFIRMED), 1_950).incrementReason!!
             assertTrue(youtube.increment(next).shouldShowLimit)
             assertEquals(3, instagram.snapshot().count)
             youtube.acknowledgeLimit()
@@ -34,6 +34,41 @@ class ShortsSessionIntegrationTest {
             youtube.end()
             assertFalse(youtube.increment("late Short").shouldShowLimit)
             assertEquals(4, youtube.snapshot().count)
+        }
+    }
+
+    @Test fun crossAppInterleavedCountingAndDedupeIntegrity() {
+        mockConstruction(Intent::class.java, withSettings().defaultAnswer(RETURNS_SELF)).use {
+            val context = memoryContext()
+            val store = SessionStore(context)
+            val counter = ShortsCounter()
+            store.start(5)
+
+            // Instagram counts 2 reels
+            assertFalse(store.increment("Instagram Reel #1").shouldShowLimit)
+            assertFalse(store.increment("Instagram Reel #2").shouldShowLimit)
+            assertEquals(2, store.snapshot().count)
+
+            // YouTube Shorts entry counts 1
+            val firstShort = counter.update(ShortsObservation(ShortsViewer.CONFIRMED, fingerprint = "s1"), 0).incrementReason!!
+            val r1 = store.increment(firstShort)
+            assertFalse(r1.shouldShowLimit)
+            assertEquals(3, store.snapshot().count)
+
+            // Duplicate/stale events in Shorts within count gap do not count
+            assertNull(counter.update(ShortsObservation(ShortsViewer.CONFIRMED, fingerprint = "s1"), 600).incrementReason)
+
+            // YouTube Shorts transition to s2 counts 1
+            counter.update(ShortsObservation(ShortsViewer.CONFIRMED, scroll = ShortsScroll(1_500, "reel_recycler", pageIndex = 1)), 1_500)
+            val secondShort = counter.update(ShortsObservation(ShortsViewer.CONFIRMED), 1_950).incrementReason!!
+            val r2 = store.increment(secondShort)
+            assertFalse(r2.shouldShowLimit)
+            assertEquals(4, r2.state.count)
+
+            // 5th video (Reel) reaches limit
+            val r3 = store.increment("Instagram Reel #3")
+            assertEquals(5, r3.state.count)
+            assertTrue(r3.shouldShowLimit)
         }
     }
 
