@@ -5,6 +5,7 @@
 
     <queries>
         <package android:name="com.instagram.android" />
+        <package android:name="com.google.android.youtube" />
     </queries>
 
     <application
@@ -36,7 +37,7 @@
             android:name=".accessibility.FiniteAccessibilityService"
             android:description="@string/accessibility_service_description"
             android:exported="true"
-            android:label="FINITE Reel Counter"
+            android:label="FINITE Reels and Shorts Counter"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
