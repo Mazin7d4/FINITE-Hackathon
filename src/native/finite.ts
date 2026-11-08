@@ -10,6 +10,7 @@ export type FiniteNativeApi = {
   configure(limit: number, selectedApps: string[], days: number[], startMinute: number, endMinute: number): Promise<unknown>;
   getUsage(): Promise<FiniteUsage>;
   scheduleReminder(id: string, videoCount: number): Promise<boolean>;
+  syncReminders(reminders: Array<{id: string; videoCount: number}>): Promise<boolean>;
   cancelReminder(id: string): Promise<boolean>;
   pickTime(initialMinute: number): Promise<number | null>;
   endSession(): Promise<unknown>;

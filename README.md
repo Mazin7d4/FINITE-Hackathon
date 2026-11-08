@@ -5,13 +5,13 @@
 <p align="center"><strong>One shared limit for the short-video feeds you choose.</strong><br>FINITE helps you set a daily boundary across Instagram Reels and YouTube Shorts while keeping the rest of the app usable.</p>
 
 <p align="center">
-  <a href="https://github.com/Mazin7d4/FINITE-Hackathon/releases/tag/v0.1.6"><img src="https://img.shields.io/github/v/release/Mazin7d4/FINITE-Hackathon?display_name=tag&sort=semver&color=54d6c7" alt="Latest release"></a>
+  <a href="https://github.com/Mazin7d4/FINITE-Hackathon/releases/tag/v0.1.7"><img src="https://img.shields.io/github/v/release/Mazin7d4/FINITE-Hackathon?display_name=tag&sort=semver&color=54d6c7" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-54d6c7.svg" alt="MIT license"></a>
   <img src="https://img.shields.io/badge/platform-Android-54d6c7.svg" alt="Android platform">
-  <a href="https://github.com/Mazin7d4/FINITE-Hackathon/releases/tag/v0.1.6"><img src="https://img.shields.io/badge/release%20build-verified%20locally-54d6c7.svg" alt="Release build verified locally"></a>
+  <a href="https://github.com/Mazin7d4/FINITE-Hackathon/releases/tag/v0.1.7"><img src="https://img.shields.io/badge/release%20build-verified%20locally-54d6c7.svg" alt="Release build verified locally"></a>
 </p>
 
-Verified locally: TypeScript + 16 JS + 61 Kotlin + `assembleRelease` passed.
+Verified locally: TypeScript + Jest passed. Android build not run for this maintenance fix.
 
 ![FINITE app demo](docs/demo.gif)
 
@@ -45,11 +45,11 @@ flowchart LR
   <img src="docs/gallery/overlay.png" alt="Native limit overlay" width="220">
 </p>
 
-## Install v0.1.6
+## Install v0.1.7
 
-**[Download the Android APK](https://github.com/Mazin7d4/FINITE-Hackathon/releases/download/v0.1.6/finite-v0.1.6.apk)** · [release notes](https://github.com/Mazin7d4/FINITE-Hackathon/releases/tag/v0.1.6)
+**[Download the Android APK](https://github.com/Mazin7d4/FINITE-Hackathon/releases/download/v0.1.7/finite-v0.1.7.apk)** · [release notes](https://github.com/Mazin7d4/FINITE-Hackathon/releases/tag/v0.1.7)
 
-1. Download `finite-v0.1.6.apk` on Android and allow your browser or Files app to install it when prompted.
+1. Download `finite-v0.1.7.apk` on Android and allow your browser or Files app to install it when prompted.
 2. Open FINITE and tap **Skip for now** for an account-free setup, or create an optional local account; then choose Instagram and/or YouTube and set a daily goal.
 3. Optional scheduling is off by default; when it is off, the limit applies all day. Video check-ins appear in the feed and do not need notification permission.
 4. Tap **Enable** and turn on FINITE in Android Accessibility settings. Return to FINITE and tap **Start scrolling**.

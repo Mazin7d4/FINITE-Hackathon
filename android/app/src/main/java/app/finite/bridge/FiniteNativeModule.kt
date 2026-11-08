@@ -200,6 +200,18 @@ class FiniteNativeModule(
     }
 
     @ReactMethod
+    fun syncReminders(reminderList: ReadableArray, promise: Promise) {
+        val records = (0 until reminderList.size()).mapNotNull { index ->
+            reminderList.getMap(index)?.let { item ->
+                val id = item.getString("id")
+                if (id != null && item.hasKey("videoCount")) id to item.getInt("videoCount") else null
+            }
+        }.toMap()
+        reminders.reconcile(records)
+        promise.resolve(true)
+    }
+
+    @ReactMethod
     fun cancelReminder(id: String, promise: Promise) {
         reminders.cancel(id)
         promise.resolve(true)
