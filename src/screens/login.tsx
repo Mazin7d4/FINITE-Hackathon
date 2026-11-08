@@ -21,6 +21,7 @@ type Props = {
   onAppleSignIn?: () => void;
   onGoogleSignIn?: () => void;
   onCreateAccount?: () => void;
+  onSkip?: () => void;
 };
 
 export default function LoginScreen({
@@ -29,6 +30,7 @@ export default function LoginScreen({
   onAppleSignIn,
   onGoogleSignIn,
   onCreateAccount,
+  onSkip,
 }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -122,6 +124,10 @@ export default function LoginScreen({
               >
                 <Text style={styles.loginText}>Log in</Text>
                 <Text style={styles.arrow}>→</Text>
+              </Pressable>
+
+              <Pressable accessibilityRole="button" onPress={onSkip ?? authUnavailable} style={styles.skipButton}>
+                <Text style={styles.skipText}>Skip for now</Text>
               </Pressable>
 
               <View style={styles.dividerRow}>
@@ -291,6 +297,16 @@ const styles = StyleSheet.create({
   forgotText: {
     color: finiteColors.secondaryText,
     fontSize: 11,
+  },
+  skipButton: {
+    alignItems: "center",
+    paddingVertical: 11,
+  },
+  skipText: {
+    color: finiteColors.text,
+    fontSize: 12,
+    fontWeight: "600",
+    textDecorationLine: "underline",
   },
   loginButton: {
     height: 44,
