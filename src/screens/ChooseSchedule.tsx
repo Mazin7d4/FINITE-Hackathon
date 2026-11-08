@@ -17,19 +17,21 @@ const SCHEDULES = [
   { id: "busy_week", title: "Busy week — Customize days", icon: "▱" },
 ] as const;
 
-type ScheduleId = (typeof SCHEDULES)[number]["id"];
+export type ScheduleId = (typeof SCHEDULES)[number]["id"];
 
 type Props = {
+  initialSchedule?: ScheduleId;
   onBack?: () => void;
   onContinue?: (schedule: ScheduleId) => void;
 };
 
 export default function ChooseSchedule({
+  initialSchedule = "exam_week",
   onBack,
   onContinue,
 }: Props) {
   const [selectedSchedule, setSelectedSchedule] =
-    useState<ScheduleId>("exam_week");
+    useState<ScheduleId>(initialSchedule);
 
   const selectedTitle =
     SCHEDULES.find((schedule) => schedule.id === selectedSchedule)?.title ??

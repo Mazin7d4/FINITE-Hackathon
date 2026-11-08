@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from "react";
 import {
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StatusBar,
@@ -19,9 +21,12 @@ export type PersonalGoal = {
   scheduleMode: ScheduleMode;
   startsOn: string;
   endsOn: string;
+  scheduleId?: "exam_week" | "weekdays" | "busy_week";
 };
 
 type Props = {
+  initialGoal?: PersonalGoal;
+  scheduleId?: PersonalGoal["scheduleId"];
   initialLimit?: number;
   scheduleLabel?: string;
   onBack?: () => void;
@@ -29,17 +34,19 @@ type Props = {
 };
 
 export default function PersonalizeGoal({
+  initialGoal,
   initialLimit = 7,
+  scheduleId = "exam_week",
   scheduleLabel = "Exam week",
   onBack,
   onSave,
 }: Props): React.JSX.Element {
   const [dailyLimit, setDailyLimit] = useState(
-    Math.max(1, Math.min(100, Math.round(initialLimit))),
+    Math.max(1, Math.min(100, Math.round(initialGoal?.dailyLimit ?? initialLimit))),
   );
-  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("date_range");
-  const [startsOn, setStartsOn] = useState("2 Nov 2026");
-  const [endsOn, setEndsOn] = useState("8 Nov 2026");
+  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>(initialGoal?.scheduleMode ?? "date_range");
+  const [startsOn, setStartsOn] = useState(initialGoal?.startsOn ?? "2 Nov 2026");
+  const [endsOn, setEndsOn] = useState(initialGoal?.endsOn ?? "8 Nov 2026");
 
   const scheduleNote = useMemo(() => {
     if (scheduleMode === "repeat_weekly") {
@@ -62,10 +69,8 @@ export default function PersonalizeGoal({
     >
       <StatusBar barStyle="dark-content" />
       <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
-        <ScrollView
-          contentContainerStyle={styles.page}
-          keyboardShouldPersistTaps="handled"
-        >
+        <KeyboardAvoidingView style={styles.safeArea} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
           <View style={styles.topBar}>
             <Pressable
               accessibilityRole="button"
@@ -215,7 +220,7 @@ export default function PersonalizeGoal({
             <Pressable
               accessibilityRole="button"
               onPress={() =>
-                onSave?.({ dailyLimit, scheduleMode, startsOn, endsOn })
+                onSave?.({ dailyLimit, scheduleMode, startsOn, endsOn, scheduleId })
               }
               style={({ pressed }) => [
                 styles.saveButton,
@@ -229,7 +234,8 @@ export default function PersonalizeGoal({
               You can adjust this whenever life changes.
             </Text>
           </View>
-        </ScrollView>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </LinearGradient>
   );
