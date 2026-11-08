@@ -47,7 +47,7 @@ const initialState: SessionState = {
   accessibilityEnabled: false,
 };
 
-function FiniteApp({initialLimit, onBack}: {initialLimit?: number; onBack?: () => void}): React.JSX.Element {
+function FiniteApp({initialLimit, onBack, onLimitSaved, scheduleStatus}: {initialLimit?: number; onBack?: () => void; onLimitSaved?: (limit: number) => Promise<void>; scheduleStatus?: string}): React.JSX.Element {
   const [session, setSession] = useState(initialState);
   const [limitText, setLimitText] = useState(String(initialLimit ?? 5));
   const limit = Number(limitText);
@@ -57,11 +57,11 @@ function FiniteApp({initialLimit, onBack}: {initialLimit?: number; onBack?: () =
     try {
       const next = await FiniteNative.getState();
       setSession(next);
-      if (!next.active && initialLimit === undefined) setLimitText(String(next.limit));
+      if (!next.active) setLimitText(String(initialLimit ?? next.limit));
     } catch (error) {
       console.warn('Unable to read FINITE state', error);
     }
-  }, []);
+  }, [initialLimit]);
 
   useEffect(() => {
     refreshState();
@@ -117,6 +117,13 @@ function FiniteApp({initialLimit, onBack}: {initialLimit?: number; onBack?: () =
       return;
     }
     try {
+      await onLimitSaved?.(limit);
+    } catch (error) {
+      Alert.alert('Could not save limit', 'Your daily goal was not updated, so the session did not start.');
+      console.warn('Unable to save FINITE session limit', error);
+      return;
+    }
+    try {
       setSession(await FiniteNative.startSession(limit));
     } catch (error) {
       Alert.alert('Could not start session', String(error));
@@ -163,6 +170,7 @@ function FiniteApp({initialLimit, onBack}: {initialLimit?: number; onBack?: () =
             ? 'FINITE is watching for distinct Reels and Shorts transitions on this device.'
             : 'Choose your combined Reels and Shorts limit. We’ll remind you when you arrive.'}
         </Text>
+        <Text style={styles.scheduleStatus}>Schedule: {scheduleStatus ?? 'Always on'}</Text>
 
         {session.active ? (
           <View style={styles.card}>
@@ -251,8 +259,8 @@ function FiniteApp({initialLimit, onBack}: {initialLimit?: number; onBack?: () =
 
 const STATE_REFRESH_INTERVAL_MS = 60_000;
 
-export default function FiniteScreen({initialLimit, onBack}: {initialLimit?: number; onBack?: () => void}): React.JSX.Element {
-  return <FiniteApp initialLimit={initialLimit} onBack={onBack} />;
+export default function FiniteScreen({initialLimit, onBack, onLimitSaved, scheduleStatus}: {initialLimit?: number; onBack?: () => void; onLimitSaved?: (limit: number) => Promise<void>; scheduleStatus?: string}): React.JSX.Element {
+  return <FiniteApp initialLimit={initialLimit} onBack={onBack} onLimitSaved={onLimitSaved} scheduleStatus={scheduleStatus} />;
 }
 
 const styles = StyleSheet.create({
@@ -267,6 +275,7 @@ const styles = StyleSheet.create({
   brand: {marginLeft: 12, color: finiteColors.text, fontSize: 19, fontWeight: '900', letterSpacing: 3.4},
   hero: {color: finiteColors.text, fontSize: 34, lineHeight: 39, fontWeight: '700', letterSpacing: -0.8},
   intro: {marginTop: 10, marginBottom: 30, color: finiteColors.secondaryText, fontSize: 16, lineHeight: 23},
+  scheduleStatus: {marginTop: -18, marginBottom: 18, color: finiteColors.primary, fontSize: 13, fontWeight: '700'},
   card: {padding: 22, borderRadius: 24, borderWidth: 1, borderColor: finiteColors.divider,
     backgroundColor: finiteColors.surface, alignItems: 'center'},
   eyebrow: {alignSelf: 'flex-start', color: finiteColors.primary, fontSize: 12,

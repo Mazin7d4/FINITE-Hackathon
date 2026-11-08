@@ -14,6 +14,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { finiteColors, finiteGradientColors } from "./theme";
 import {FiniteNative, type FiniteUsage} from "../native/finite";
+import type {ScheduleSettings} from "./ChooseSchedule";
 
 type DayUsage = {
   day: string;
@@ -31,6 +32,9 @@ type Props = {
   onAddReminder?: () => void;
   onEditApps?: () => void;
   onEditSchedule?: () => void;
+  onEditGoal?: () => void;
+  onLogout?: () => void;
+  schedule?: ScheduleSettings;
 };
 
 const APP_INFO: Record<
@@ -64,6 +68,9 @@ export default function UsageReview({
   onAddReminder,
   onEditApps,
   onEditSchedule,
+  onEditGoal,
+  onLogout,
+  schedule,
 }: Props): React.JSX.Element {
   const [liveUsage, setLiveUsage] = useState<FiniteUsage | undefined>();
   useEffect(() => {
@@ -164,11 +171,21 @@ export default function UsageReview({
           </View>
 
           <View style={styles.settingsRow}>
+            <Pressable accessibilityRole="button" onPress={onEditGoal} style={styles.settingsButton}>
+              <Text style={styles.settingsButtonText}>Edit goal</Text>
+            </Pressable>
             <Pressable accessibilityRole="button" onPress={onEditApps} style={styles.settingsButton}>
               <Text style={styles.settingsButtonText}>Edit apps</Text>
             </Pressable>
-            <Pressable accessibilityRole="button" onPress={onEditSchedule} style={styles.settingsButton}>
-              <Text style={styles.settingsButtonText}>Edit schedule</Text>
+          </View>
+
+          <View style={styles.scheduleStatus}>
+            <Text style={styles.scheduleStatusTitle}>Schedule</Text>
+            <Text style={styles.scheduleStatusText}>
+              {schedule && !schedule.enabled ? "Schedule off · all day" : "Schedule on · counting follows your selected days and times"}
+            </Text>
+            <Pressable accessibilityRole="button" onPress={onEditSchedule}>
+              <Text style={styles.scheduleStatusLink}>Change schedule</Text>
             </Pressable>
           </View>
 
@@ -256,6 +273,9 @@ export default function UsageReview({
             >
               <Text style={styles.reminderButtonText}>Add a reminder ♧</Text>
             </Pressable>
+            <Pressable accessibilityRole="button" onPress={onLogout} style={styles.logoutButton}>
+              <Text style={styles.logoutText}>Log out of this device</Text>
+            </Pressable>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -268,6 +288,12 @@ const styles = StyleSheet.create({
   settingsRow: { flexDirection: "row", gap: 8, marginBottom: 15 },
   settingsButton: { flex: 1, borderRadius: 12, borderWidth: 1, borderColor: "rgba(35,39,43,0.16)", paddingVertical: 9, alignItems: "center", backgroundColor: "rgba(255,255,255,0.28)" },
   settingsButtonText: { color: finiteColors.text, fontSize: 12, fontWeight: "700" },
+  scheduleStatus: { backgroundColor: "rgba(255,255,255,0.38)", borderRadius: 12, padding: 10, marginBottom: 12 },
+  scheduleStatusTitle: { color: finiteColors.text, fontSize: 9, fontWeight: "700" },
+  scheduleStatusText: { color: finiteColors.secondaryText, fontSize: 8, marginTop: 3 },
+  scheduleStatusLink: { color: finiteColors.primary, fontSize: 8, fontWeight: "700", marginTop: 6 },
+  logoutButton: { alignItems: "center", paddingTop: 12 },
+  logoutText: { color: finiteColors.secondaryText, fontSize: 10, textDecorationLine: "underline" },
   safeArea: { flex: 1 },
   page: {
     flexGrow: 1,

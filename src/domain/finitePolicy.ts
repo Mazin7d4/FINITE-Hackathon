@@ -1,7 +1,8 @@
-export type ScheduleWindow = {days: number[]; startMinute: number; endMinute: number};
+export type ScheduleWindow = {enabled: boolean; days: number[]; startMinute: number; endMinute: number};
 
 export const DEFAULT_TRACKED_APPS = ['instagram', 'youtube'] as const;
 export const DEFAULT_SCHEDULE: ScheduleWindow = {
+  enabled: false,
   days: [0, 1, 2, 3, 4, 5, 6],
   startMinute: 0,
   endMinute: 0,
@@ -42,6 +43,7 @@ export function isValidSchedule(value: unknown): value is ScheduleWindow {
 export function normalizeSchedule(value: unknown): ScheduleWindow {
   if (!isValidSchedule(value)) return {...DEFAULT_SCHEDULE};
   return {
+    enabled: (value as Partial<ScheduleWindow>).enabled === true,
     days: [...new Set(value.days)].sort((a, b) => a - b),
     startMinute: value.startMinute,
     endMinute: value.endMinute,
@@ -50,6 +52,7 @@ export function normalizeSchedule(value: unknown): ScheduleWindow {
 
 /** Mirrors the native policy's local-clock rules for previews and deterministic UI tests. */
 export function isScheduleActive(date: Date, window: ScheduleWindow): boolean {
+  if (!window.enabled) return true;
   const minute = date.getHours() * 60 + date.getMinutes();
   const overnight = window.startMinute > window.endMinute;
   const scheduleDay = overnight && minute < window.endMinute

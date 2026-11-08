@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -7,7 +7,6 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -37,24 +36,12 @@ export default function PersonalizeGoal({
   initialGoal,
   initialLimit = 7,
   scheduleId = "exam_week",
-  scheduleLabel = "Exam week",
   onBack,
   onSave,
 }: Props): React.JSX.Element {
   const [dailyLimit, setDailyLimit] = useState(
     Math.max(1, Math.min(100, Math.round(initialGoal?.dailyLimit ?? initialLimit))),
   );
-  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>(initialGoal?.scheduleMode ?? "date_range");
-  const [startsOn, setStartsOn] = useState(initialGoal?.startsOn ?? "2 Nov 2026");
-  const [endsOn, setEndsOn] = useState(initialGoal?.endsOn ?? "8 Nov 2026");
-
-  const scheduleNote = useMemo(() => {
-    if (scheduleMode === "repeat_weekly") {
-      return "Applies every week. You can change your goal anytime.";
-    }
-    return "Applies every day in this range. Ends automatically after 8 Nov.";
-  }, [scheduleMode]);
-
   const adjustLimit = (amount: number) => {
     setDailyLimit((current) => Math.max(1, Math.min(100, current + amount)));
   };
@@ -138,89 +125,24 @@ export default function PersonalizeGoal({
             </View>
           </View>
 
-          <View style={styles.questionRow}>
-            <Text style={styles.question}>When should this apply?</Text>
-            <View style={styles.scheduleBadge}>
-              <Text style={styles.scheduleBadgeText}>{scheduleLabel}</Text>
-            </View>
+          <View style={styles.scheduleCard}>
+            <Text style={styles.scheduleCardTitle}>Your daily limit</Text>
+            <Text style={styles.scheduleCardText}>
+              Applies every day. Set optional days and times from Schedule on your dashboard.
+            </Text>
           </View>
-
-          <View style={styles.segment} accessibilityRole="tablist">
-            <Pressable
-              accessibilityRole="tab"
-              accessibilityState={{ selected: scheduleMode === "date_range" }}
-              onPress={() => setScheduleMode("date_range")}
-              style={[
-                styles.segmentOption,
-                scheduleMode === "date_range" && styles.segmentSelected,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.segmentText,
-                  scheduleMode === "date_range" && styles.segmentTextSelected,
-                ]}
-              >
-                Date range
-              </Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="tab"
-              accessibilityState={{ selected: scheduleMode === "repeat_weekly" }}
-              onPress={() => setScheduleMode("repeat_weekly")}
-              style={[
-                styles.segmentOption,
-                scheduleMode === "repeat_weekly" && styles.segmentSelected,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.segmentText,
-                  scheduleMode === "repeat_weekly" && styles.segmentTextSelected,
-                ]}
-              >
-                Repeat weekly
-              </Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.dateLabels}>
-            <Text style={styles.dateLabel}>Starts on</Text>
-            <Text style={styles.dateLabel}>Ends on</Text>
-          </View>
-          <View style={styles.dateRow}>
-            <View style={styles.dateField}>
-              <TextInput
-                accessibilityLabel="Start date"
-                value={startsOn}
-                onChangeText={setStartsOn}
-                style={styles.dateInput}
-                placeholder="2 Nov 2026"
-                placeholderTextColor={finiteColors.text}
-                returnKeyType="done"
-              />
-              <Text style={styles.calendarIcon}>▦</Text>
-            </View>
-            <View style={styles.dateField}>
-              <TextInput
-                accessibilityLabel="End date"
-                value={endsOn}
-                onChangeText={setEndsOn}
-                style={styles.dateInput}
-                placeholder="8 Nov 2026"
-                placeholderTextColor={finiteColors.text}
-                returnKeyType="done"
-              />
-              <Text style={styles.calendarIcon}>▦</Text>
-            </View>
-          </View>
-          <Text style={styles.helperText}>{scheduleNote}</Text>
 
           <View style={styles.bottom}>
             <Pressable
               accessibilityRole="button"
               onPress={() =>
-                onSave?.({ dailyLimit, scheduleMode, startsOn, endsOn, scheduleId })
+                onSave?.({
+                  dailyLimit,
+                  scheduleMode: initialGoal?.scheduleMode ?? "date_range",
+                  startsOn: initialGoal?.startsOn ?? "2 Nov 2026",
+                  endsOn: initialGoal?.endsOn ?? "8 Nov 2026",
+                  scheduleId,
+                })
               }
               style={({ pressed }) => [
                 styles.saveButton,
@@ -344,66 +266,23 @@ const styles = StyleSheet.create({
     marginTop: -5,
   },
   limitUnit: { color: finiteColors.secondaryText, fontSize: 8, marginTop: -1 },
-  questionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+  scheduleCard: {
+    backgroundColor: "rgba(255,255,255,0.72)",
+    borderRadius: 12,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
     marginTop: 11,
-    marginBottom: 6,
   },
-  question: { color: finiteColors.text, fontSize: 10, fontWeight: "600" },
-  scheduleBadge: {
-    backgroundColor: "rgba(255,255,255,0.75)",
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 99,
-  },
-  scheduleBadgeText: {
-    color: finiteColors.primary,
-    fontSize: 7,
+  scheduleCardTitle: {
+    color: finiteColors.text,
+    fontSize: 10,
     fontWeight: "600",
   },
-  segment: {
-    height: 24,
-    flexDirection: "row",
-    backgroundColor: "rgba(255,255,255,0.88)",
-    borderRadius: 8,
-    padding: 2,
-  },
-  segmentOption: {
-    flex: 1,
-    borderRadius: 6,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  segmentSelected: { backgroundColor: "#D8E8FF" },
-  segmentText: { color: "#7F9BA6", fontSize: 8 },
-  segmentTextSelected: { color: finiteColors.text, fontWeight: "500" },
-  dateLabels: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 8,
-    marginBottom: 3,
-  },
-  dateLabel: { width: "48%", color: finiteColors.secondaryText, fontSize: 8 },
-  dateRow: { flexDirection: "row", justifyContent: "space-between", gap: 8 },
-  dateField: {
-    flex: 1,
-    height: 25,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.88)",
-    borderRadius: 7,
-    paddingHorizontal: 6,
-  },
-  dateInput: { flex: 1, padding: 0, color: finiteColors.text, fontSize: 8 },
-  calendarIcon: { color: finiteColors.primary, fontSize: 11, marginLeft: 3 },
-  helperText: {
+  scheduleCardText: {
     color: finiteColors.secondaryText,
     fontSize: 8,
     lineHeight: 12,
-    marginTop: 6,
-    maxWidth: 270,
+    marginTop: 3,
   },
   bottom: { marginTop: "auto", paddingTop: 22 },
   saveButton: {

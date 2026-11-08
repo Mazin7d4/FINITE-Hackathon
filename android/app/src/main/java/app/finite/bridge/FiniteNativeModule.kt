@@ -12,6 +12,12 @@ import android.provider.Settings
 import android.util.Log
 import java.util.Calendar
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.Executors
+import java.security.MessageDigest
+import java.security.SecureRandom
+import android.util.Base64
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
 import androidx.core.content.ContextCompat
 import app.finite.accessibility.FiniteAccessibilityService
 import app.finite.data.SessionState
@@ -33,6 +39,7 @@ class FiniteNativeModule(
     private val reminders = ReminderScheduler(reactContext)
     private var receiverRegistered = false
     private var listenerCount = 0
+    private val cryptoExecutor = Executors.newFixedThreadPool(1)
 
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -151,6 +158,41 @@ class FiniteNativeModule(
     fun endSession(promise: Promise) {
         store.end()
         promise.resolve(stateMap())
+    }
+
+    /** Ends the native counter session and cancels its persisted alarms. */
+    @ReactMethod
+    fun cancelAllReminders(promise: Promise) {
+        reminders.cancelAll()
+        promise.resolve(true)
+    }
+
+    /** Derives a password verifier without doing PBKDF2 work on the UI thread. */
+    @ReactMethod
+    fun hashPassword(password: String, promise: Promise) {
+        cryptoExecutor.execute {
+            try {
+                val salt = ByteArray(SALT_BYTES).also(SecureRandom()::nextBytes)
+                val hash = derive(password, salt, ITERATIONS)
+                promise.resolve(Arguments.createMap().apply {
+                    putString("salt", Base64.encodeToString(salt, Base64.NO_WRAP))
+                    putString("hash", Base64.encodeToString(hash, Base64.NO_WRAP))
+                    putInt("iterations", ITERATIONS)
+                })
+            } catch (error: Exception) { promise.reject("PASSWORD_HASH_FAILED", "Unable to protect this local profile", error) }
+        }
+    }
+
+    /** Verifies a password with constant-time comparison off the UI thread. */
+    @ReactMethod
+    fun verifyPassword(password: String, saltText: String, hashText: String, iterations: Double, promise: Promise) {
+        cryptoExecutor.execute {
+            try {
+                val expected = Base64.decode(hashText, Base64.DEFAULT)
+                val actual = derive(password, Base64.decode(saltText, Base64.DEFAULT), iterations.toInt().coerceIn(MIN_ITERATIONS, MAX_ITERATIONS))
+                promise.resolve(MessageDigest.isEqual(actual, expected))
+            } catch (_: Exception) { promise.resolve(false) }
+        }
     }
 
     @ReactMethod
@@ -318,9 +360,18 @@ class FiniteNativeModule(
             .any { it == expected }
     }
 
+    private fun derive(password: String, salt: ByteArray, iterations: Int): ByteArray =
+        SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+            .generateSecret(PBEKeySpec(password.toCharArray(), salt, iterations, HASH_BITS)).encoded
+
     companion object {
         private const val EVENT_STATE_CHANGED = "FiniteSessionChanged"
         private const val TAG = "FINITE"
         private const val NOTIFICATION_REQUEST_CODE = 9031
+        private const val SALT_BYTES = 16
+        private const val HASH_BITS = 256
+        private const val ITERATIONS = 120_000
+        private const val MIN_ITERATIONS = 100_000
+        private const val MAX_ITERATIONS = 500_000
     }
 }
