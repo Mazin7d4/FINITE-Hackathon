@@ -51,7 +51,7 @@ flowchart LR
 
 1. Download `finite-v0.1.6.apk` on Android and allow your browser or Files app to install it when prompted.
 2. Open FINITE and tap **Skip for now** for an account-free setup, or create an optional local account; then choose Instagram and/or YouTube and set a daily goal.
-3. Optional scheduling is off by default; when it is off, the limit applies all day. Enable Android notification permission if you want reminder notifications.
+3. Optional scheduling is off by default; when it is off, the limit applies all day. Video check-ins appear in the feed and do not need notification permission.
 4. Tap **Enable** and turn on FINITE in Android Accessibility settings. Return to FINITE and tap **Start scrolling**.
 
 ## What is here
@@ -59,7 +59,8 @@ flowchart LR
 - One shared daily counter for Instagram Reels and YouTube Shorts.
 - Selective tracking: short-video feeds are limited; messaging remains usable.
 - Editable goal, selected apps, optional schedule, reminders, dashboard, and usage history.
-- Native limit overlay with **I'm Done** and **Continue Anyway** actions.
+- Once-daily video-count check-ins that show watched and remaining videos at the selected milestone.
+- Animated native limit overlay with **I'm done for today** and **Continue anyway** actions.
 - Optional app-local accounts and profile storage; **Skip for now** provides an account-free alternative, and there is no backend account service.
 - Device-local state: goals, sessions, counts, and acknowledgements stay on the device.
 

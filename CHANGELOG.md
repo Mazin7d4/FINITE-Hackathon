@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Changed reminders from scheduled notifications into once-daily video-count check-ins.
+- Added watched and remaining counts to reminder popups.
+- Redesigned the reminder and hard-limit overlays with premium cards, progress details, and entrance/exit motion.
+
 ## [0.1.6] — 2026-11-07
 
 - Added **Skip for now** on the first screen for account-free setup.

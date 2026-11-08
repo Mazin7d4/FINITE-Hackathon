@@ -9,11 +9,9 @@ export type FiniteUsage = {
 export type FiniteNativeApi = {
   configure(limit: number, selectedApps: string[], days: number[], startMinute: number, endMinute: number): Promise<unknown>;
   getUsage(): Promise<FiniteUsage>;
-  scheduleReminder(id: string, atMillis: number, videoCount: number, repeat: string): Promise<boolean>;
+  scheduleReminder(id: string, videoCount: number): Promise<boolean>;
   cancelReminder(id: string): Promise<boolean>;
-  pickReminderDateTime(initialTimestamp: number): Promise<number | null>;
   pickTime(initialMinute: number): Promise<number | null>;
-  requestNotificationPermission(): Promise<boolean>;
   endSession(): Promise<unknown>;
   cancelAllReminders(): Promise<boolean>;
   hashPassword(password: string): Promise<{salt: string; hash: string; iterations: number}>;

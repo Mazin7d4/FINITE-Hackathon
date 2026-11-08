@@ -18,7 +18,6 @@ import {FiniteNative} from './src/native/finite';
 import {DEFAULT_SCHEDULE, normalizeSchedule, normalizeTrackedApps, isScheduleActive} from './src/domain/finitePolicy';
 import {dashboardHistory, destinationAfterAppsSaved, destinationForSignedInProfile} from './src/domain/flowPolicy';
 import {GUEST_SESSION, sessionDestination, sessionStorageKey, type SessionIdentity} from './src/domain/guestPolicy';
-import {restoreRecurringReminders} from './src/domain/profileSecurity';
 
 type Screen = 'login' | 'signup' | 'choose-apps' | 'choose-schedule' | 'personalize' | 'review' | 'reminder' | 'home';
 type Profile = {name: string; email: string; passwordSalt: string; passwordHash: string; passwordIterations: number};
@@ -30,7 +29,7 @@ const defaultState = (): StoredState => ({selectedApps: ['instagram', 'youtube']
 export default function App(): React.JSX.Element {
   const [screen, setScreen] = useState<Screen>('login');
   const [history, setHistory] = useState<Screen[]>([]);
-  const [profile, setProfile] = useState<Profile>();
+  const [_profile, setProfile] = useState<Profile>();
   const [identity, setIdentity] = useState<SessionIdentity>();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedApps, setSelectedApps] = useState<string[]>(defaultState().selectedApps);
@@ -48,7 +47,7 @@ export default function App(): React.JSX.Element {
     if (savedGoal) { try { next.goal = JSON.parse(savedGoal) as PersonalGoal; } catch {} }
     if (savedApps) { try { next.selectedApps = normalizeTrackedApps(JSON.parse(savedApps)); } catch {} }
     if (savedSchedule) { try { const parsed = JSON.parse(savedSchedule) as Partial<ScheduleSettings>; next.schedule = {id: parsed.id === 'weekdays' || parsed.id === 'busy_week' || parsed.id === 'exam_week' ? parsed.id : 'exam_week', ...normalizeSchedule(parsed)}; } catch {} }
-    if (savedReminders) { try { const parsed = JSON.parse(savedReminders) as ReminderRecord[]; next.reminders = parsed.filter(item => item && typeof item.id === 'string' && item.timestamp); } catch {} }
+    if (savedReminders) { try { const parsed = JSON.parse(savedReminders) as ReminderRecord[]; next.reminders = parsed.filter(item => item && typeof item.id === 'string' && Number.isInteger(item.videoCount) && item.videoCount > 0); } catch {} }
     return next;
   };
   const applyState = (state: StoredState) => { setGoal(state.goal); setSelectedApps(state.selectedApps); setSchedule(state.schedule); setReminders(state.reminders); };
@@ -105,12 +104,12 @@ export default function App(): React.JSX.Element {
   const persistReminders = async (next: ReminderRecord[]) => { setReminders(next); try { await saveValueForCurrentProfile('reminders', next); } catch { Alert.alert('Could not save reminder', 'Your reminder change was not saved. Please try again.'); throw new Error('reminder-save-failed'); } };
 
   const restoreReminders = async (saved: ReminderRecord[], session?: SessionIdentity) => {
-    const restored = restoreRecurringReminders(saved, Date.now());
-    if (session && JSON.stringify(restored) !== JSON.stringify(saved)) {
+    const restored = saved.filter(item => Number.isInteger(item.videoCount) && item.videoCount > 0 && item.videoCount <= 100);
+    if (session && restored.length !== saved.length) {
       await AsyncStorage.setItem(sessionStorageKey(session, 'reminders'), JSON.stringify(restored));
       setReminders(restored);
     }
-    await Promise.all(restored.map(item => FiniteNative.scheduleReminder(item.id, item.timestamp, item.videoCount, item.repeat).catch(error => console.warn('Unable to restore reminder', item.id, error))));
+    await Promise.all(restored.map(item => FiniteNative.scheduleReminder(item.id, item.videoCount).catch(error => console.warn('Unable to restore reminder', item.id, error))));
   };
 
   useEffect(() => { if (storageLoaded && goal) void FiniteNative.configure(goal.dailyLimit, selectedApps, schedule.enabled ? schedule.days : [0, 1, 2, 3, 4, 5, 6], schedule.enabled ? schedule.startMinute : 0, schedule.enabled ? schedule.endMinute : 0).catch(error => console.warn('Unable to sync FINITE native policy', error)); }, [storageLoaded, goal, selectedApps, schedule]);
@@ -163,7 +162,7 @@ export default function App(): React.JSX.Element {
   else if (screen === 'choose-apps') content = <ChooseApp initialSelectedApps={selectedApps} onContinue={async apps => { try { await persistApps(apps); const next = destinationAfterAppsSaved(editing); if (next === 'review') dashboard(); else navigate(next); } catch {} }} />;
   else if (screen === 'choose-schedule') content = <ChooseSchedule initialSchedule={schedule.id} initialSettings={schedule} onBack={goBack} onContinue={async next => { try { await persistSchedule(next); if (editing) dashboard(); else navigate('personalize'); } catch {} }} />;
   else if (screen === 'personalize') content = <PersonalizeGoal initialGoal={goal} scheduleId={schedule.id} scheduleLabel={schedule.id === 'weekdays' ? 'Weekdays' : schedule.id === 'busy_week' ? 'Busy week' : 'Exam week'} onBack={goBack} onSave={persistGoal} />;
-  else if (screen === 'reminder') content = <Reminder editingReminder={reminders.find(item => item.id === editingReminderId)} savedReminders={reminders} onEdit={id => setEditingReminderId(id)} onAddNew={() => setEditingReminderId(undefined)} onBack={goBack} onClose={goBack} onDelete={async id => { try { await FiniteNative.cancelReminder(id); await persistReminders(reminders.filter(item => item.id !== id)); if (editingReminderId === id) setEditingReminderId(undefined); } catch (error) { console.warn('Unable to delete reminder', error); } }} onSave={async settings => { try { const id = settings.id ?? `reminder-${Date.now()}`; await FiniteNative.scheduleReminder(id, settings.timestamp, settings.videoCount, settings.repeat); await persistReminders([...reminders.filter(item => item.id !== id), {...settings, id}]); Alert.alert('Reminder saved', 'FINITE will remind you on this device.', [{text: 'Done', onPress: dashboard}]); } catch (error) { if ((error as {code?: string}).code === 'INVALID_REMINDER_TIME') Alert.alert('Choose a future time', 'This reminder time has already passed. Pick a later date or time.'); else Alert.alert('Notifications are off', 'Allow FINITE notifications in Android settings, then save this reminder again.', [{text: 'Allow', onPress: () => { void FiniteNative.requestNotificationPermission(); }}, {text: 'Cancel', style: 'cancel'}]); } }} />;
+  else if (screen === 'reminder') content = <Reminder dailyLimit={goal?.dailyLimit ?? 8} editingReminder={reminders.find(item => item.id === editingReminderId)} savedReminders={reminders} onEdit={id => setEditingReminderId(id)} onAddNew={() => setEditingReminderId(undefined)} onBack={goBack} onClose={goBack} onDelete={async id => { try { await FiniteNative.cancelReminder(id); await persistReminders(reminders.filter(item => item.id !== id)); if (editingReminderId === id) setEditingReminderId(undefined); } catch (error) { console.warn('Unable to delete reminder', error); } }} onSave={async settings => { try { const id = settings.id ?? `reminder-${Date.now()}`; await FiniteNative.scheduleReminder(id, settings.videoCount); await persistReminders([...reminders.filter(item => item.id !== id), {...settings, id}]); Alert.alert('Reminder ready', `FINITE will check in when you reach video ${settings.videoCount}.`, [{text: 'Done', onPress: dashboard}]); } catch (error) { console.warn('Unable to save video reminder', error); Alert.alert('Could not save reminder', 'Please try again while FINITE is open.'); } }} />;
   else if (screen === 'home') content = <FiniteScreen initialLimit={goal?.dailyLimit} onLimitSaved={persistSessionLimit} scheduleStatus={!schedule.enabled ? 'Schedule off · all day' : isScheduleActive(new Date(), schedule) ? 'Active window' : 'Outside active window'} onBack={goBack} />;
   else content = <UsageReview selectedApps={selectedApps} dailyLimit={goal?.dailyLimit ?? 7} schedule={schedule} onBack={() => BackHandler.exitApp()} onStartScrolling={() => navigate('home')} onAddReminder={() => { setEditingReminderId(undefined); openEditor('reminder'); }} onEditApps={() => openEditor('choose-apps')} onEditSchedule={() => openEditor('choose-schedule')} onEditGoal={() => openEditor('personalize')} onLogout={clearLogout} />;
   return <SafeAreaProvider>{content}</SafeAreaProvider>;

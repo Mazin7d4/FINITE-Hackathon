@@ -5,9 +5,11 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.os.SystemClock
 import android.os.Handler
 import android.os.Looper
@@ -16,12 +18,16 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
-import android.widget.Button
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
+import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.Space
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import app.finite.MainActivity
 import app.finite.data.SessionStore
+import app.finite.notifications.ReminderScheduler
 
 class FiniteAccessibilityService : AccessibilityService() {
     private lateinit var store: SessionStore
@@ -30,6 +36,7 @@ class FiniteAccessibilityService : AccessibilityService() {
     private val reelCounter = ReelCounter()
     private val shortsDetector = ShortsDetector()
     private val shortsCounter = ShortsCounter()
+    private lateinit var reminders: ReminderScheduler
     private val handler = Handler(Looper.getMainLooper())
     private val scheduleGuard = object : Runnable {
         override fun run() {
@@ -70,6 +77,7 @@ class FiniteAccessibilityService : AccessibilityService() {
     override fun onCreate() {
         super.onCreate()
         store = SessionStore(this)
+        reminders = ReminderScheduler(this)
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         ContextCompat.registerReceiver(this, lifecycleReceiver,
             IntentFilter(ACTION_RESET_DETECTION).apply { addAction(SessionStore.ACTION_STATE_CHANGED) },
@@ -179,7 +187,11 @@ class FiniteAccessibilityService : AccessibilityService() {
         }
         Log.i(TAG, "Count=${result.state.count}/${result.state.limit}; reason=$reason")
         if (result.shouldShowLimit && overlay == null && packageName != null && store.canShowLimitFor(packageName)) {
-            showLimitOverlay(result.state.limit)
+            showProgressOverlay(result.state.count, result.state.limit, isLimit = true)
+        } else if (overlay == null && packageName != null && store.canShowLimitFor(packageName)) {
+            reminders.claimDueReminder(result.state.count, result.state.limit)?.let {
+                showProgressOverlay(result.state.count, result.state.limit, isLimit = false)
+            }
         }
     }
 
@@ -196,94 +208,228 @@ class FiniteAccessibilityService : AccessibilityService() {
         )
     }
 
-    private fun showLimitOverlay(limit: Int) {
+    private fun showProgressOverlay(count: Int, limit: Int, isLimit: Boolean) {
+        val remaining = (limit - count).coerceAtLeast(0)
+        val root = FrameLayout(this).apply {
+            setPadding(dp(20), dp(28), dp(20), dp(28))
+            setBackgroundColor(Color.argb(168, 7, 19, 27))
+            alpha = 0f
+        }
+
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(28), dp(28), dp(28), dp(24))
+            setPadding(dp(26), dp(24), dp(26), dp(22))
             background = GradientDrawable().apply {
                 orientation = GradientDrawable.Orientation.TOP_BOTTOM
                 colors = intArrayOf(
-                    Color.parseColor(FINITE_BACKGROUND_TOP),
-                    Color.parseColor(FINITE_BACKGROUND_MIDDLE),
-                    Color.parseColor(FINITE_BACKGROUND_BOTTOM),
+                    Color.parseColor("#FCFEFD"),
+                    Color.parseColor("#F3F8F6"),
+                    Color.parseColor("#E7F1EE"),
                 )
-                cornerRadius = dp(24).toFloat()
-                setStroke(dp(1), Color.parseColor(FINITE_DIVIDER))
+                cornerRadius = dp(30).toFloat()
+                setStroke(dp(1), Color.parseColor("#AFC7C8"))
             }
-            elevation = dp(16).toFloat()
+            elevation = dp(24).toFloat()
+            alpha = 0f
+            scaleX = 0.92f
+            scaleY = 0.92f
+            translationY = dp(24).toFloat()
+        }
+
+        panel.addView(View(this).apply {
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(if (isLimit) FINITE_GOLD else FINITE_PRIMARY))
+                cornerRadius = dp(99).toFloat()
+            }
+        }, LinearLayout.LayoutParams(dp(38), dp(4)).apply { bottomMargin = dp(18) })
+
+        panel.addView(TextView(this).apply {
+            text = if (isLimit) "✓" else count.toString()
+            setTextColor(Color.parseColor(if (isLimit) FINITE_GOLD_DARK else FINITE_PRIMARY_DARK))
+            textSize = if (isLimit) 28f else 25f
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(if (isLimit) "#F7EED8" else "#DCECEA"))
+                shape = GradientDrawable.OVAL
+                setStroke(dp(1), Color.parseColor(if (isLimit) "#E7D3A3" else "#B7D3D0"))
+            }
+        }, LinearLayout.LayoutParams(dp(64), dp(64)).apply { bottomMargin = dp(17) })
+
+        panel.addView(TextView(this).apply {
+            text = if (isLimit) "DAILY BOUNDARY REACHED" else "MINDFUL CHECK-IN"
+            setTextColor(Color.parseColor(FINITE_SECONDARY_TEXT))
+            textSize = 11f
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            letterSpacing = 0.14f
+            gravity = Gravity.CENTER
+        }, matchWrap(top = 0, bottom = 8))
+
+        panel.addView(TextView(this).apply {
+            text = if (isLimit) "That’s your $limit for today." else "You’re $count videos in."
+            setTextColor(Color.parseColor(FINITE_TEXT))
+            textSize = 25f
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            gravity = Gravity.CENTER
+            letterSpacing = -0.02f
+        }, matchWrap(top = 0, bottom = 7))
+
+        panel.addView(TextView(this).apply {
+            text = if (isLimit) {
+                "You kept the promise you made to yourself. Take the win and leave the feed behind."
+            } else {
+                "$remaining ${if (remaining == 1) "video" else "videos"} left in today’s plan. Pause for a second, then choose what feels right."
+            }
+            setTextColor(Color.parseColor(FINITE_SECONDARY_TEXT))
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setLineSpacing(0f, 1.18f)
+        }, matchWrap(top = 0, bottom = 22))
+
+        val stats = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#DDEAE7"))
+                cornerRadius = dp(18).toFloat()
+            }
+            setPadding(dp(8), dp(12), dp(8), dp(12))
+            addView(statColumn(count.toString(), "WATCHED"), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(View(this@FiniteAccessibilityService).apply { setBackgroundColor(Color.parseColor("#B8CECA")) }, LinearLayout.LayoutParams(dp(1), dp(34)))
+            addView(statColumn(remaining.toString(), "LEFT TODAY"), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        panel.addView(stats, matchWrap(top = 0, bottom = 14))
+
+        val progress = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#D4E1DF"))
+                cornerRadius = dp(99).toFloat()
+            }
+            clipToOutline = true
+            addView(View(this@FiniteAccessibilityService).apply {
+                background = GradientDrawable().apply {
+                    orientation = GradientDrawable.Orientation.LEFT_RIGHT
+                    colors = if (isLimit) intArrayOf(Color.parseColor(FINITE_GOLD), Color.parseColor("#D69A58"))
+                        else intArrayOf(Color.parseColor("#6B9299"), Color.parseColor("#73A99B"))
+                    cornerRadius = dp(99).toFloat()
+                }
+            }, LinearLayout.LayoutParams(0, dp(8), count.coerceAtMost(limit).toFloat()))
+            addView(Space(this@FiniteAccessibilityService), LinearLayout.LayoutParams(0, dp(8), remaining.coerceAtLeast(0).toFloat()))
+        }
+        panel.addView(progress, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(8)).apply { bottomMargin = dp(22) })
+
+        if (isLimit) {
+            panel.addView(overlayButton("I’m done for today", primary = true) {
+                dismissOverlayAnimated {
+                    store.end("Goal complete — session ended")
+                    openFinite()
+                }
+            }, matchWrap(top = 0, bottom = 10))
+            panel.addView(overlayButton("Continue anyway", primary = false) {
+                dismissOverlayAnimated { store.acknowledgeLimit() }
+            }, matchWrap(top = 0, bottom = 0))
+        } else {
+            panel.addView(overlayButton("Continue with intention", primary = true) {
+                dismissOverlayAnimated()
+            }, matchWrap(top = 0, bottom = 10))
+            panel.addView(overlayButton("End my session", primary = false) {
+                dismissOverlayAnimated {
+                    store.end("Session ended at mindful reminder")
+                    openFinite()
+                }
+            }, matchWrap(top = 0, bottom = 0))
         }
 
         panel.addView(TextView(this).apply {
-            text = "YOU’VE REACHED YOUR LIMIT"
-            setTextColor(Color.parseColor(FINITE_SECONDARY_TEXT))
-            textSize = 13f
-            typeface = Typeface.create("sans-serif", Typeface.BOLD)
-            letterSpacing = 0.08f
+            text = "FINITE  •  YOUR ATTENTION, ON PURPOSE"
+            setTextColor(Color.parseColor("#78908F"))
+            textSize = 9f
+            letterSpacing = 0.1f
             gravity = Gravity.CENTER
-        }, matchWrap(top = 0, bottom = 12))
+        }, matchWrap(top = 18, bottom = 0))
 
-        panel.addView(TextView(this).apply {
-            text = "You planned to watch $limit Reels and Shorts. You’ve reached your goal!"
-            setTextColor(Color.parseColor(FINITE_TEXT))
-            textSize = 21f
-            typeface = Typeface.create("sans-serif", Typeface.BOLD)
-            gravity = Gravity.CENTER
-        }, matchWrap(top = 0, bottom = 22))
-
-        panel.addView(overlayButton("I’m Done", primary = true) {
-            dismissOverlay()
-            store.end("Goal complete — session ended")
-            startActivity(
-                Intent(this, MainActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-            )
-        }, matchWrap(top = 0, bottom = 10))
-
-        panel.addView(overlayButton("Continue Anyway", primary = false) {
-            store.acknowledgeLimit()
-            dismissOverlay()
-        }, matchWrap(top = 0, bottom = 0))
+        root.addView(panel, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.CENTER,
+        ))
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             android.graphics.PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.CENTER
-            horizontalMargin = 0.06f
-        }
+        ).apply { gravity = Gravity.CENTER }
 
         try {
-            windowManager.addView(panel, params)
-            overlay = panel
-            Log.i(TAG, "Limit overlay shown")
+            windowManager.addView(root, params)
+            overlay = root
+            root.animate().alpha(1f).setDuration(220L).setInterpolator(DecelerateInterpolator()).start()
+            panel.animate().alpha(1f).scaleX(1f).scaleY(1f).translationY(0f)
+                .setDuration(420L).setInterpolator(OvershootInterpolator(0.72f)).start()
+            Log.i(TAG, if (isLimit) "Limit overlay shown" else "Video reminder overlay shown")
         } catch (error: RuntimeException) {
             Log.e(TAG, "Unable to show accessibility overlay", error)
-            store.updateDetectorStatus("Limit reached, but overlay failed — see FINITE logs")
+            store.updateDetectorStatus("FINITE popup failed — see app logs")
         }
     }
 
-    private fun overlayButton(label: String, primary: Boolean, action: () -> Unit): Button =
-        Button(this).apply {
+    private fun statColumn(value: String, label: String): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        addView(TextView(this@FiniteAccessibilityService).apply {
+            text = value
+            setTextColor(Color.parseColor(FINITE_TEXT))
+            textSize = 22f
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            gravity = Gravity.CENTER
+        })
+        addView(TextView(this@FiniteAccessibilityService).apply {
+            text = label
+            setTextColor(Color.parseColor(FINITE_SECONDARY_TEXT))
+            textSize = 9f
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            letterSpacing = 0.12f
+            gravity = Gravity.CENTER
+        })
+    }
+
+    private fun overlayButton(label: String, primary: Boolean, action: () -> Unit): TextView =
+        TextView(this).apply {
             text = label
             textSize = 15f
-            isAllCaps = false
+            gravity = Gravity.CENTER
             setTextColor(Color.parseColor(if (primary) FINITE_SURFACE else FINITE_TEXT))
             typeface = Typeface.create("sans-serif", Typeface.BOLD)
             minHeight = dp(50)
             setPadding(dp(16), 0, dp(16), 0)
-            background = GradientDrawable().apply {
+            val shape = GradientDrawable().apply {
                 setColor(Color.parseColor(if (primary) FINITE_PRIMARY else FINITE_SURFACE))
-                cornerRadius = dp(13).toFloat()
-                if (!primary) {
-                    setStroke(dp(1), Color.parseColor(FINITE_DIVIDER))
-                }
+                cornerRadius = dp(16).toFloat()
+                if (!primary) setStroke(dp(1), Color.parseColor("#C8D8D5"))
             }
+            background = RippleDrawable(ColorStateList.valueOf(Color.parseColor("#2AFFFFFF")), shape, null)
+            isClickable = true
             setOnClickListener { action() }
         }
+
+    private fun openFinite() {
+        startActivity(Intent(this, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
+    }
+
+    private fun dismissOverlayAnimated(after: () -> Unit = {}) {
+        val view = overlay ?: run { after(); return }
+        view.animate().alpha(0f).translationY(dp(8).toFloat()).setDuration(170L)
+            .setInterpolator(DecelerateInterpolator()).withEndAction {
+                try { windowManager.removeView(view) } catch (_: RuntimeException) {}
+                if (overlay === view) overlay = null
+                after()
+            }.start()
+    }
 
     private fun matchWrap(top: Int, bottom: Int) = LinearLayout.LayoutParams(
         LinearLayout.LayoutParams.MATCH_PARENT,
@@ -355,14 +501,13 @@ class FiniteAccessibilityService : AccessibilityService() {
         private const val SCHEDULE_GUARD_INTERVAL_MS = 60_000L
 
         // Keep the native accessibility overlay aligned with src/screens/theme.ts.
-        private const val FINITE_BACKGROUND_TOP = "#B0D6DD"
-        private const val FINITE_BACKGROUND_MIDDLE = "#BADBCC"
-        private const val FINITE_BACKGROUND_BOTTOM = "#C3DDC5"
         private const val FINITE_PRIMARY = "#5B7A8C"
+        private const val FINITE_PRIMARY_DARK = "#365D68"
+        private const val FINITE_GOLD = "#C99A53"
+        private const val FINITE_GOLD_DARK = "#8C642B"
         private const val FINITE_TEXT = "#162B39"
         private const val FINITE_SECONDARY_TEXT = "#607684"
         private const val FINITE_SURFACE = "#FFFFFF"
-        private const val FINITE_DIVIDER = "#DCE8E5"
     }
 }
 

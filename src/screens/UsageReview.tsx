@@ -271,7 +271,7 @@ export default function UsageReview({
                 pressed && styles.pressed,
               ]}
             >
-              <Text style={styles.reminderButtonText}>Add a reminder ♧</Text>
+              <Text style={styles.reminderButtonText}>Add a video check-in ✦</Text>
             </Pressable>
             <Pressable accessibilityRole="button" onPress={onLogout} style={styles.logoutButton}>
               <Text style={styles.logoutText}>Log out of this device</Text>

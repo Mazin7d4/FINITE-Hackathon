@@ -5,12 +5,10 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.os.Handler
 import android.provider.Settings
 import android.util.Log
-import java.util.Calendar
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.Executors
 import java.security.MessageDigest
@@ -196,35 +194,8 @@ class FiniteNativeModule(
     }
 
     @ReactMethod
-    fun requestNotificationPermission(promise: Promise) {
-        if (android.os.Build.VERSION.SDK_INT < 33 ||
-            androidx.core.content.ContextCompat.checkSelfPermission(reactContext, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            promise.resolve(true)
-            return
-        }
-        val activity = reactContext.currentActivity
-        if (activity == null) {
-            promise.reject("NO_ACTIVITY", "FINITE needs an active Android screen to request notification permission")
-            return
-        }
-        activity.requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_REQUEST_CODE)
-        promise.resolve(false)
-    }
-
-    @ReactMethod
-    fun scheduleReminder(id: String, atMillis: Double, videoCount: Double, repeat: String, promise: Promise) {
-        if (android.os.Build.VERSION.SDK_INT >= 33 &&
-            androidx.core.content.ContextCompat.checkSelfPermission(reactContext, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            promise.reject("NOTIFICATION_PERMISSION_REQUIRED", "Allow notifications, then save the reminder again")
-            return
-        }
-        if (atMillis <= System.currentTimeMillis()) {
-            promise.reject("INVALID_REMINDER_TIME", "Choose a future reminder time")
-            return
-        }
-        reminders.schedule(id, atMillis.toLong(), videoCount.toInt().coerceIn(1, 100), repeat)
+    fun scheduleReminder(id: String, videoCount: Double, promise: Promise) {
+        reminders.schedule(id, videoCount.toInt().coerceIn(1, 100))
         promise.resolve(true)
     }
 
@@ -232,37 +203,6 @@ class FiniteNativeModule(
     fun cancelReminder(id: String, promise: Promise) {
         reminders.cancel(id)
         promise.resolve(true)
-    }
-
-    @ReactMethod
-    fun pickReminderDateTime(initialTimestamp: Double, promise: Promise) {
-        val activity = reactContext.currentActivity
-        if (activity == null) {
-            promise.reject("NO_ACTIVITY", "FINITE needs an active Android screen to choose a reminder time")
-            return
-        }
-
-        activity.runOnUiThread {
-            val settled = AtomicBoolean(false)
-            fun cancel() { if (settled.compareAndSet(false, true)) promise.resolve(null) }
-            fun finish(timestamp: Long) { if (settled.compareAndSet(false, true)) promise.resolve(timestamp.toDouble()) }
-            val initial = Calendar.getInstance().apply { timeInMillis = initialTimestamp.toLong() }
-            val showTimePicker = { year: Int, month: Int, day: Int ->
-                val selected = Calendar.getInstance().apply {
-                    set(year, month, day, initial.get(Calendar.HOUR_OF_DAY), initial.get(Calendar.MINUTE), 0)
-                }
-                TimePickerDialog(activity, { _, hour, minute ->
-                    selected.set(Calendar.HOUR_OF_DAY, hour)
-                    selected.set(Calendar.MINUTE, minute)
-                    finish(selected.timeInMillis)
-                }, selected.get(Calendar.HOUR_OF_DAY), selected.get(Calendar.MINUTE), android.text.format.DateFormat.is24HourFormat(activity)).apply {
-                    setOnCancelListener { cancel() }
-                }.show()
-            }
-            DatePickerDialog(activity, { _, year, month, day -> showTimePicker(year, month, day) }, initial.get(Calendar.YEAR), initial.get(Calendar.MONTH), initial.get(Calendar.DAY_OF_MONTH)).apply {
-                setOnCancelListener { cancel() }
-            }.show()
-        }
     }
 
     @ReactMethod
@@ -367,7 +307,6 @@ class FiniteNativeModule(
     companion object {
         private const val EVENT_STATE_CHANGED = "FiniteSessionChanged"
         private const val TAG = "FINITE"
-        private const val NOTIFICATION_REQUEST_CODE = 9031
         private const val SALT_BYTES = 16
         private const val HASH_BITS = 256
         private const val ITERATIONS = 120_000
