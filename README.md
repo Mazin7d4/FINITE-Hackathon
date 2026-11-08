@@ -17,7 +17,9 @@ Verified locally: TypeScript + 13 JS + 61 Kotlin + `assembleRelease` passed.
 
 > Evidence: Real Android emulator footage: FINITE counter, Shorts scrolling, native limit overlay. [Download the release demo](https://github.com/Mazin7d4/FINITE-Hackathon/releases/download/v0.1.5/finite-demo-short.mp4).
 
-BRAG_VIDEO_URL
+## Watch FINITE in action
+
+https://github.com/user-attachments/assets/7b8e0580-d50e-416d-8863-a65d13ad5b74
 
 ## See it in three steps
 
