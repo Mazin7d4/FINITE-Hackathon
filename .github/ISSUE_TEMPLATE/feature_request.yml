@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest a focused improvement for FINITE
+title: "feature: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: What should change, and who would it help?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe the smallest useful version.
+    validations:
+      required: true

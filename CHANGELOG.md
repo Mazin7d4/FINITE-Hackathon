@@ -1,0 +1,31 @@
+# Changelog
+
+## [0.1.5] — 2026-11-07
+
+- Made daily goal, selected apps, schedule, and reminders editable from the dashboard.
+- Added optional scheduling, off by default.
+- Added persistent device-local profiles with salted password verification, sign-in, logout, and reminder restoration.
+- Synchronized dashboard edits, native session settings, and the shared counter.
+- Preserved the Simran visual direction and shared Reels + Shorts detector.
+
+## [0.1.4] — 2026-11-07
+
+- Switched session launch to Instagram first when selected and installed.
+- Made counting defaults fail open when app selection is unavailable.
+- Updated the limit notification styling.
+
+## [0.1.3] — 2026-11-07
+
+- Added real reminders, scheduled app policy, usage history, and the themed limit overlay.
+
+## [0.1.2] — 2026-11-07
+
+- Made Simran's UI the main flow.
+
+## [0.1.1] — 2026-11-07
+
+- Integrated the team UI and improved fast-swipe counting while the next video loads.
+
+## [0.1.0] — 2026-11-07
+
+- Initial FINITE Android MVP: React Native flow, native accessibility service, shared Reels/Shorts counter, and device-local session state.
