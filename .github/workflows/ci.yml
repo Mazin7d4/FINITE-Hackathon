@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  javascript:
+    name: TypeScript and JavaScript tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+      - uses: actions/setup-node@101b3474143230c3562bd21f0b3c3f8254784571
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test -- --runInBand
+
+  android-unit:
+    name: Kotlin Android unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+      - uses: actions/setup-node@101b3474143230c3562bd21f0b3c3f8254784571
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+      - uses: android-actions/setup-android@035682743ab223ec9c6169af09811dff8247e520
+        with:
+          accept-android-sdk-licenses: true
+      - run: yes | sdkmanager --licenses >/dev/null
+      - run: sdkmanager "platforms;android-37" "build-tools;37.0.0" "ndk;27.1.12297006" "cmake;3.22.1"
+      - run: npm ci
+      - run: cd android && ./gradlew testDebugUnitTest --build-cache
