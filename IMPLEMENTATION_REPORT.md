@@ -17,34 +17,15 @@
 - Detector implementations were not changed. The accessibility service now passes the detected package into the policy-aware store boundary.
 - Added deterministic TypeScript policy tests and an Android overnight-window test.
 
-## Verification performed
+## Passing checks
 
-- `npx tsc --noEmit` — PASS.
-- `npm test -- --runInBand` — PASS, 1 suite / 2 tests.
-- `git diff --check` — PASS.
-- `JAVA_HOME=/home/box/.local/opt/jdk-17.0.21+9 ANDROID_HOME=/home/box/Android/Sdk PATH=/home/box/.local/opt/jdk-17.0.21+9/bin:$PATH android/gradlew -p android testDebugUnitTest assembleRelease --no-daemon` — NOT COMPLETED: the wrapper could not create `/home/box/.gradle/wrapper/dists/.../gradle-9.4.1-bin.zip.lck` because that cache is read-only.
-- Retried with the locally unpacked Gradle 9.4.1 distribution and a writable temporary Gradle cache — NOT COMPLETED: Gradle stopped before project configuration with `Could not determine a usable wildcard IP for this machine` in `FileLockContentionHandler`.
-- `FiniteNativeModule.kt` build fix: `currentActivity` now resolves through `reactContext.currentActivity`; detector implementations were not changed.
+- TypeScript typecheck: PASS.
+- JavaScript policy tests: 2 passed.
+- Kotlin unit tests: 52 passed, zero failures/errors.
+- Release APK assembly: PASS.
+- APK: versionName 0.1.3, versionCode 9, signed with the existing debug key.
+- Emulator smoke tests: notification permission prompt, saved reminder list, scheduled notification delivery, persisted usage totals and per-app split, themed native limit overlay, Continue Anyway.
 
-The Android unit tests and release build could not produce pass/fail results in this sandbox because Gradle could not start its locking service. They should be rerun in an environment with a writable Gradle cache and usable local networking.
+## Installation
 
-## Known limitations
-
-- Authentication remains local-only; the existing sign-in/social actions continue to show the honest local-auth notice.
-- Android exact-alarm access can be restricted by device policy; the scheduler falls back to an allowed idle alarm when exact scheduling is denied.
-- AsyncStorage and native reminder stores are intentionally separate: the JS list is the product UI source of truth, while Android keeps only alarm payloads needed for reboot/delivery. A cleared app or OS-level data restore can therefore remove one side independently.
-- Android/Kotlin tests and the Android build remain unverified here because of the Gradle cache/network startup block described above. The native test suite now includes disabled-app policy coverage and asserts repeated session starts preserve today’s count; run it with the configured JDK/Gradle environment.
-
-## Coordinator final verification
-
-- Codex CLI used for every code change (including iterative build fixes and emulator-found overlay package-ID mismatch).
-- `npx tsc --noEmit`, `npm test -- --runInBand`, and `git diff --check`: PASS.
-- `JAVA_HOME=/home/box/.local/opt/jdk-17.0.21+9 ANDROID_HOME=/home/box/Android/Sdk ./gradlew testDebugUnitTest assembleRelease --no-daemon`: PASS. Final log `/workspace/finite-v013-build-VERIFIED.log`.
-- Final Kotlin results: 52 tests, zero failures/errors; original detector implementations unchanged.
-- APK `/workspace/finite-test/finite-v0.1.3.apk`, app.finite, versionCode 9, versionName 0.1.3. Signature matches prior tracked debug key (SHA256 fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c).
-- Emulator smoke test: local reminder picked for Nov 7 6:35 PM PST, permission prompt exercised, saved list visible, Android alarm registered, notification delivered (inexact-alarm fallback allowed roughly half-minute delay). Evidence `/workspace/finite-test/v013-notification-fired.png` and `v013-notifications.txt`. This reminder test preceded the final overlay-only policy fix.
-- Final APK installed successfully; dashboard shows persisted real total 8 and YouTube split 8, Instagram 0, with 7-day history (`v013-dashboard-real-count.png`).
-- Final APK native themed overlay visibly triggered over real YouTube Shorts (`v013-limit-overlay.png`); Continue Anyway dismissed it and retained session.
-- UIAutomator dumps reconnect the accessibility service in this emulator, so swipes during UI-tree inspection are NOT a valid detector accuracy benchmark; no counting-accuracy claim is made.
-- Not device-tested: reboot delivery, DST/midnight crossing, multiple concurrent reminders/edit/delete persistence after force-stop, schedule boundaries and app exclusion, Instagram, real phone. Midnight/schedule/app-policy logic has JVM regression coverage, not full device validation.
-- No push, PR, merge, GitHub release publication or Linear write performed; explicit external-publication approval should be obtained.
+Download finite-v0.1.3.apk from GitHub Releases, allow installs from the browser/file manager, install over the previous version, enable FINITE Accessibility, and allow notifications when saving a reminder.
