@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -32,6 +33,7 @@ export default function LoginScreen({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const authUnavailable = () => Alert.alert("FINITE", "Authentication is not connected yet. You can continue setting up your goal.");
 
   return (
     <LinearGradient
@@ -46,7 +48,7 @@ export default function LoginScreen({
       <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
         <KeyboardAvoidingView
           style={styles.keyboardView}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <ScrollView
             contentContainerStyle={styles.page}
@@ -105,7 +107,7 @@ export default function LoginScreen({
               </View>
 
               <Pressable
-                onPress={onForgotPassword}
+                onPress={onForgotPassword ?? authUnavailable}
                 style={styles.forgotButton}
               >
                 <Text style={styles.forgotText}>Forgot password?</Text>
@@ -130,7 +132,7 @@ export default function LoginScreen({
 
               <View style={styles.socialRow}>
                 <Pressable
-                  onPress={onAppleSignIn}
+                  onPress={onAppleSignIn ?? authUnavailable}
                   style={({ pressed }) => [
                     styles.socialButton,
                     pressed && styles.pressed,
@@ -141,7 +143,7 @@ export default function LoginScreen({
                 </Pressable>
 
                 <Pressable
-                  onPress={onGoogleSignIn}
+                  onPress={onGoogleSignIn ?? authUnavailable}
                   style={({ pressed }) => [
                     styles.socialButton,
                     pressed && styles.pressed,
@@ -159,7 +161,7 @@ export default function LoginScreen({
 
             <View style={styles.accountRow}>
               <Text style={styles.accountPrompt}>New to Finite? </Text>
-              <Pressable onPress={onCreateAccount}>
+              <Pressable accessibilityRole="button" onPress={onCreateAccount ?? authUnavailable}>
                 <Text style={styles.createAccount}>Create an account</Text>
               </Pressable>
             </View>

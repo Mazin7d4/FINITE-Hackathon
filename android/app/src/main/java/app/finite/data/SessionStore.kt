@@ -38,7 +38,7 @@ class SessionStore(context: Context) {
             .putInt(KEY_COUNT, 0)
             .putBoolean(KEY_ACTIVE, true)
             .putBoolean(KEY_ACKNOWLEDGED, false)
-            .putString(KEY_STATUS, "Session active — waiting for Instagram Reels")
+            .putString(KEY_STATUS, "Session active — waiting for Reels or Shorts")
             .apply()
         notifyChanged()
         return snapshot()
@@ -73,7 +73,7 @@ class SessionStore(context: Context) {
         val shouldShow = nextCount >= before.limit && !before.limitAcknowledged
         preferences.edit()
             .putInt(KEY_COUNT, nextCount)
-            .putString(KEY_STATUS, "Counted Reel $nextCount · $reason")
+            .putString(KEY_STATUS, "Counted video $nextCount · $reason")
             .apply()
         notifyChanged()
         return CountResult(snapshot(), shouldShow)
@@ -81,6 +81,9 @@ class SessionStore(context: Context) {
 
     @Synchronized
     fun updateDetectorStatus(status: String) {
+        // Keep the last counted source/reason visible on the counter screen. Detector chatter
+        // must not replace it with a later transient rejection or outside-viewer message.
+        if (preferences.getString(KEY_STATUS, null)?.startsWith("Counted video ") == true) return
         if (preferences.getString(KEY_STATUS, null) == status) return
         preferences.edit().putString(KEY_STATUS, status).apply()
         notifyChanged()

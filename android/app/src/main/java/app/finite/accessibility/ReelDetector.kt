@@ -12,6 +12,8 @@ internal data class Detection(
     val actionScore: Int,
     val sourceLooksScrollable: Boolean,
     val summary: String,
+    val scroll: ReelScroll? = null,
+    val strongFingerprint: Boolean = false,
 )
 
 /**
@@ -52,10 +54,10 @@ internal class ReelDetector {
 
                 when {
                     id.hasAny("username", "author", "owner_name", "profile_name") &&
-                        value.isIdentityText() -> authors.add(value.normalizedIdentity())
+                        node.isVisibleToUser && value.isIdentityText() -> authors.add(value.normalizedIdentity())
                     id.hasAny("caption", "description", "media_text") &&
-                        value.isIdentityText() -> captions.add(value.normalizedIdentity())
-                    value.isIdentityText() -> fallbackIdentity.add(value.normalizedIdentity())
+                        node.isVisibleToUser && value.isIdentityText() -> captions.add(value.normalizedIdentity())
+                    node.isVisibleToUser && value.isIdentityText() -> fallbackIdentity.add(value.normalizedIdentity())
                 }
             }
 
@@ -79,14 +81,25 @@ internal class ReelDetector {
             ?.toUInt()
             ?.toString(16)
 
+        val sourceLooksScrollable = sourceLooksLikeReelPager(event.source)
+        val scroll = if (isViewer && sourceLooksScrollable &&
+            event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED
+        ) ReelScroll(
+            eventTime = event.eventTime,
+            y = event.scrollY,
+            deltaY = if (Build.VERSION.SDK_INT >= 28) event.scrollDeltaY.takeUnless { it == -1 } else null,
+            deltaX = if (Build.VERSION.SDK_INT >= 28) event.scrollDeltaX.takeUnless { it == -1 } else null,
+        ) else null
         return Detection(
             isReelsViewer = isViewer,
             fingerprint = fingerprint,
             strongEvidence = strong,
             actionScore = actions.size,
-            sourceLooksScrollable = sourceLooksLikeReelPager(event.source),
+            sourceLooksScrollable = sourceLooksScrollable,
             summary = "viewer=$isViewer strongIds=$strongIdHits actions=${actions.size} " +
                 "labels=$reelsLabels fp=${fingerprint ?: "none"} nodes=$visited",
+            scroll = scroll,
+            strongFingerprint = authors.isNotEmpty() || captions.isNotEmpty(),
         )
     }
 

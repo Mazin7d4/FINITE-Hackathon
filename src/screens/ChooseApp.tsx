@@ -19,12 +19,13 @@ const APPS = [
 ];
 
 type Props = {
+  initialSelectedApps?: string[];
   onContinue?: (selectedApps: string[]) => void;
 };
 
-export default function ChooseAppsScreen({ onContinue }: Props) {
+export default function ChooseAppsScreen({ initialSelectedApps, onContinue }: Props) {
   const [selectedApps, setSelectedApps] = useState<string[]>(
-    APPS.map((app) => app.id)
+    initialSelectedApps ?? APPS.map((app) => app.id)
   );
 
   function toggleApp(appId: string) {
