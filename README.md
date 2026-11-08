@@ -2,6 +2,10 @@
 
 FINITE is a React Native Android MVP for setting one shared Instagram Reels and YouTube Shorts limit. The interface and session controls are TypeScript/React Native; detection and overlays use native Kotlin and Android accessibility APIs. Counting is best effort.
 
+## Install the APK
+
+Android only: download the latest APK from [the latest release](https://github.com/Mazin7d4/FINITE-Hackathon/releases/latest). Allow installation from unknown sources when Android prompts your browser or Files app, install it over any prior FINITE app, then open FINITE, tap **Enable**, and enable the accessibility service in Android Settings. Return to FINITE and choose a limit/start.
+
 ## For UI devs
 
 - Run it: `npm install`, then `npx expo run:android` with a phone (USB debugging on) or an emulator. The first run builds the native app and takes a few minutes; after that, `npx expo start` reloads your JS changes.
