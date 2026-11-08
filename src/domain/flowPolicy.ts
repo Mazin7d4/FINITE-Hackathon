@@ -1,6 +1,6 @@
 export type FlowDestination = 'review' | 'choose-schedule';
 
-/** Signed-in users without a saved goal must finish onboarding before review. */
+/** Any local session without a saved goal must finish onboarding before review. */
 export function destinationForSignedInProfile(hasGoal: boolean): 'review' | 'choose-apps' {
   return hasGoal ? 'review' : 'choose-apps';
 }

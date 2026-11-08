@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6] — 2026-11-07
+
+- Added **Skip for now** on the first screen for account-free setup.
+- Added persistent guest setup, settings, and reminders.
+- Kept optional local account creation, preserving setup when an account is created.
+- Android versionCode 12, versionName 0.1.6.
+
 ## [0.1.5] — 2026-11-07
 
 - Made daily goal, selected apps, schedule, and reminders editable from the dashboard.
