@@ -1,194 +1,126 @@
 package app.finite.accessibility
 
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Test
 
-/**
- * Unit tests for [ReelCounter] — the Instagram Reel counting and identity-dedupe state machine.
- *
- * These tests cover service-level count state: viewer entry, reentry after absence, fingerprint
- * confirmation/debounce, and platform-switch suspension. They are the regression tests previously
- * absent (the existing ReelDetectorTest only tested classification, not counting state).
- */
 class ReelCounterTest {
+    private fun viewer(fp: String? = null, scroll: ReelScroll? = null, strong: Boolean = true,
+                       strongFingerprint: Boolean = false) =
+        Detection(true, fp, strong, 3, true, "", scroll, strongFingerprint)
+    private fun outside() = Detection(false, null, false, 0, false, "")
+    private fun swipe(time: Long, y: Int = -550) = ReelScroll(time, y, y, 0)
 
-    // --- helpers -----------------------------------------------------------
-
-    private fun strong(fp: String? = null) =
-        Detection(isReelsViewer = true, fingerprint = fp, strongEvidence = true,
-            actionScore = 0, sourceLooksScrollable = true, summary = "")
-
-    private fun weak(fp: String? = null) =
-        Detection(isReelsViewer = true, fingerprint = fp, strongEvidence = false,
-            actionScore = 3, sourceLooksScrollable = true, summary = "")
-
-    private fun outside() =
-        Detection(isReelsViewer = false, fingerprint = null, strongEvidence = false,
-            actionScore = 0, sourceLooksScrollable = false, summary = "")
-
-    // --- viewer entry ------------------------------------------------------
-
-    @Test fun strongEvidenceCountsOnFirstObservation() {
+    @Test fun entryCountsOnceAndMissingFingerprintsDoNotBlockSwipes() {
         val counter = ReelCounter()
-        val decision = counter.update(strong("fp-A"), 0)
-        assertNotNull("strong first observation must count", decision.incrementReason)
+        assertNotNull(counter.update(viewer(), 0).incrementReason)
+        var counts = 1
+        for (index in 1..10) {
+            val start = index * 800L
+            assertNull(counter.update(viewer(scroll = swipe(start)), start).incrementReason)
+            assertNull(counter.update(viewer(scroll = swipe(start + 100)), start + 100).incrementReason)
+            if (counter.update(viewer(), start + 450).incrementReason != null) counts++
+        }
+        assertEquals(11, counts)
     }
 
-    @Test fun weakEvidenceDoesNotCountOnFirstObservation() {
+    @Test fun scrollBurstAndIdentityChangeCountOnce() {
         val counter = ReelCounter()
-        val decision = counter.update(weak("fp-A"), 0)
-        assertNull("weak first observation must not count", decision.incrementReason)
+        counter.update(viewer("a", strongFingerprint = true), 0)
+        counter.update(viewer("a", swipe(800), strongFingerprint = true), 800)
+        val identity = counter.update(viewer("b", strongFingerprint = true), 900)
+        assertNotNull(identity.incrementReason)
+        assertNull(counter.update(viewer("b"), 1_250).incrementReason)
     }
 
-    @Test fun strongEntryFollowedByContentEventsDoNotDoubleCount() {
+    @Test fun duplicateCallbacksAndHorizontalScrollAreRejected() {
         val counter = ReelCounter()
-        counter.update(strong("fp-A"), 0)
-        for (t in 1_000L..5_000L step 500) {
-            assertNull("repeated same-reel events must not count",
-                counter.update(strong("fp-A"), t).incrementReason)
+        counter.update(viewer(), 0)
+        counter.update(viewer(scroll = swipe(800)), 800)
+        assertNull(counter.update(viewer(scroll = swipe(800)), 810).incrementReason)
+        assertNotNull(counter.update(viewer(), 1_200).incrementReason)
+        counter.update(viewer(scroll = ReelScroll(1_600, 0, 0, 80)), 1_600)
+        assertNull(counter.update(viewer(), 2_000).incrementReason)
+    }
+
+    @Test fun transientExitDoesNotCancelPendingButSustainedExitResetsEntry() {
+        val counter = ReelCounter()
+        counter.update(viewer(), 0)
+        counter.update(viewer(scroll = swipe(800)), 800)
+        counter.update(outside(), 900)
+        assertNotNull(counter.update(viewer(), 1_200).incrementReason)
+        counter.update(outside(), 2_000)
+        counter.update(outside(), 4_100)
+        assertNotNull(counter.update(viewer(), 4_200).incrementReason)
+    }
+
+    @Test fun fastSwipesAtSevenHundredMillisecondsCountEveryReel() {
+        val counter = ReelCounter()
+        counter.update(viewer(), 0)
+        var counts = 0
+        for (index in 1..10) {
+            val start = index * 700L
+            counter.update(viewer(scroll = swipe(start)), start)
+            if (counter.update(viewer(), start + 350).incrementReason != null) counts++
+        }
+        assertEquals(10, counts)
+    }
+
+    @Test fun singleScrollEventsCommitPreviousSwipeWithoutLosingCurrentSwipe() {
+        val counter = ReelCounter()
+        counter.update(viewer(), 0)
+        var counts = 0
+        for (index in 1..10) {
+            val time = index * 700L
+            if (counter.update(viewer(scroll = swipe(time)), time).incrementReason != null) counts++
+        }
+        if (counter.flush(7_350).incrementReason != null) counts++
+        assertEquals(10, counts)
+    }
+
+    @Test fun fallbackFingerprintFlickerWithoutScrollDoesNotCount() {
+        val counter = ReelCounter()
+        counter.update(viewer("fallback-a"), 0)
+        for ((time, fingerprint) in listOf(500L to "fallback-b", 1_000L to "fallback-c",
+            1_500L to "fallback-d")) {
+            assertNull(counter.update(viewer(fingerprint), time).incrementReason)
         }
     }
 
-    // --- identity confirmation and debounce --------------------------------
-
-    @Test fun newFingerprintCountsAfterTwoHitsAndDebounce() {
+    @Test fun zeroMovementLayoutScrollBurstsNeverCount() {
         val counter = ReelCounter()
-        counter.update(strong("fp-A"), 0)
-        // First hit of fp-B: not yet confirmed.
-        assertNull(counter.update(strong("fp-B"), 1_200).incrementReason)
-        // Second hit of fp-B after debounce: confirmed.
-        assertNotNull(counter.update(strong("fp-B"), 2_400).incrementReason)
+        counter.update(viewer(), 0)
+        counter.update(viewer(scroll = ReelScroll(100, 0, 0, 0)), 100)
+        assertNull(counter.update(viewer(), 500).incrementReason)
+        counter.update(viewer(scroll = ReelScroll(1_000, 0, 0, 0)), 1_000)
+        assertNull(counter.update(viewer(), 1_400).incrementReason)
     }
 
-    @Test fun singleHitBeforeDebounceDoesNotCount() {
-        val counter = ReelCounter()
-        counter.update(strong("fp-A"), 0)
-        // Only one hit, within debounce window.
-        assertNull(counter.update(strong("fp-B"), 500).incrementReason)
-        // Still only one hit at debounce boundary.
-        assertNull(counter.update(strong("fp-A"), 1_200).incrementReason)
+    @Test fun realThreeEventPatternCountsAtSevenHundredMillisecondIntervals() {
+        assertEquals(10, countPattern(700L))
     }
 
-    @Test fun flickeringFingerprintResetsHitCountAndDoesNotCount() {
-        val counter = ReelCounter()
-        counter.update(strong("fp-A"), 0)
-        // fp-B appears, then fp-A interrupts: pending hit count for fp-B resets.
-        counter.update(strong("fp-B"), 1_500)  // pendingHits(fp-B) = 1
-        counter.update(strong("fp-A"), 2_000)  // fp-A == lastFingerprint → pending cleared
-        // fp-B starts fresh: only 1 hit now.
-        assertNull("single hit after interruption must not count",
-            counter.update(strong("fp-B"), 2_500).incrementReason) // pendingHits(fp-B) = 1
-        // Second consecutive hit of fp-B after debounce: counts.
-        assertNotNull("two consecutive hits after debounce must count",
-            counter.update(strong("fp-B"), 3_200).incrementReason) // pendingHits(fp-B) = 2 ✓
+    @Test fun realThreeEventPatternCountsAtTwentyFiveHundredMillisecondIntervals() {
+        assertEquals(10, countPattern(2_500L))
     }
 
-    @Test fun confirmedFingerprintDoesNotCountAgainWhenRevisited() {
+    private fun countPattern(interval: Long): Int {
         val counter = ReelCounter()
-        counter.update(strong("fp-A"), 0)
-        counter.update(strong("fp-B"), 1_200)
-        counter.update(strong("fp-B"), 2_400) // counts fp-B
-        // Return to fp-A: counts (it's a different reel).
-        counter.update(strong("fp-A"), 3_600)
-        assertNotNull(counter.update(strong("fp-A"), 4_800).incrementReason)
-        // Stay on fp-A — same reel, must not count again.
-        assertNull(counter.update(strong("fp-A"), 6_000).incrementReason)
-    }
-
-    // --- absent fingerprint ------------------------------------------------
-
-    @Test fun identityLatchedAfterStrongEntryWithoutFingerprint() {
-        val counter = ReelCounter()
-        // Strong entry with no fingerprint yet (viewer opened before metadata loads).
-        counter.update(strong(fp = null), 0)
-        // Fingerprint arrives: latched without counting again.
-        assertNull(counter.update(strong("fp-A"), 500).incrementReason)
-        // Same fingerprint: still no count.
-        assertNull(counter.update(strong("fp-A"), 1_000).incrementReason)
-        // New fingerprint after latch: requires confirmation.
-        counter.update(strong("fp-B"), 2_000)
-        assertNotNull(counter.update(strong("fp-B"), 3_200).incrementReason)
-    }
-
-    // --- viewer exit and reentry -------------------------------------------
-
-    @Test fun briefAbsenceDoesNotResetViewerLatch() {
-        val counter = ReelCounter()
-        counter.update(strong("fp-A"), 0)
-        // Brief outside observation (< EXIT_MS = 2000 ms).
-        counter.update(outside(), 500)
-        counter.update(outside(), 1_000)
-        // Returns before EXIT_MS: should not count viewer entry again.
-        assertNull(counter.update(strong("fp-A"), 1_500).incrementReason)
-    }
-
-    @Test fun longAbsenceResetsViewerLatchAndCountsReentry() {
-        val counter = ReelCounter()
-        counter.update(strong("fp-A"), 0)
-        // Stay outside for longer than EXIT_MS (2000 ms).
-        counter.update(outside(), 500)
-        counter.update(outside(), 2_600) // triggers latch reset
-        // Reenter viewer: strong evidence → counts again.
-        assertNotNull(counter.update(strong("fp-A"), 2_700).incrementReason)
-    }
-
-    @Test fun reentryAfterLongAbsenceCountsEvenWithSameFingerprint() {
-        val counter = ReelCounter()
-        counter.update(strong("fp-A"), 0)
-        counter.update(outside(), 500)
-        counter.update(outside(), 2_600)
-        // Reenter with the SAME fingerprint — still a fresh entry.
-        val reentry = counter.update(strong("fp-A"), 2_700)
-        assertNotNull("reentry with same fp after long absence must count", reentry.incrementReason)
-    }
-
-    @Test fun platformSwitchStartsExitTimerWithoutImmediateReset() {
-        val counter = ReelCounter()
-        counter.update(strong("fp-A"), 0)
-        // Platform switch (e.g. user opens YouTube briefly).
-        counter.platformSuspend(500)
-        // Return quickly — no reset yet (< EXIT_MS).
-        assertNull(counter.update(strong("fp-A"), 1_000).incrementReason)
-    }
-
-    @Test fun platformSwitchFollowedByLongAbsenceResetsLatch() {
-        val counter = ReelCounter()
-        counter.update(strong("fp-A"), 0)
-        counter.platformSuspend(500) // outsideSince = 500
-        // Return after EXIT_MS from the suspend point.
-        counter.update(outside(), 2_600) // triggers reset via update
-        assertNotNull("strong reentry after platform switch + long absence must count",
-            counter.update(strong("fp-A"), 2_700).incrementReason)
-    }
-
-    // --- session reset -----------------------------------------------------
-
-    @Test fun resetClearsAllStateAndAllowsFreshEntry() {
-        val counter = ReelCounter()
-        counter.update(strong("fp-A"), 0)
-        counter.update(strong("fp-B"), 1_200)
-        counter.update(strong("fp-B"), 2_400) // commits fp-B
-        counter.reset()
-        // After reset: strong entry counts again from scratch.
-        assertNotNull(counter.update(strong("fp-A"), 3_000).incrementReason)
-        // And the same fingerprint seen again doesn't skip the confirmation phase.
-        assertNull(counter.update(strong("fp-B"), 4_200).incrementReason)
-        assertNotNull(counter.update(strong("fp-B"), 5_400).incrementReason)
-    }
-
-    // --- weak evidence path ------------------------------------------------
-
-    @Test fun weakEntryDoesNotCountUntilNewFingerprintIsConfirmed() {
-        val counter = ReelCounter()
-        // Weak entry: candidate state; does NOT count the entry immediately.
-        counter.update(weak("fp-A"), 0)
-        // Same fingerprint — viewer is confirmed but no identity transition yet.
-        assertNull(counter.update(weak("fp-A"), 500).incrementReason)
-        // New fingerprint fp-B appears and is confirmed over two events.
-        counter.update(weak("fp-B"), 1_500)
-        assertNotNull("confirmed identity change after weak entry must count",
-            counter.update(weak("fp-B"), 2_700).incrementReason)
-        // Stay on fp-B: no recount.
-        assertNull(counter.update(weak("fp-B"), 3_000).incrementReason)
+        counter.update(viewer(), 0)
+        var counts = 0
+        for (index in 1..10) {
+            val start = index * interval
+            val events = listOf(
+                ReelScroll(start, 926, 926, 0),
+                ReelScroll(start + 50, 0, -926, 0),
+                ReelScroll(start + 100, 0, 78, 0),
+            )
+            events.forEach { event ->
+                if (counter.update(viewer(scroll = event), event.eventTime).incrementReason != null) counts++
+            }
+            if (counter.update(viewer(), start + 450).incrementReason != null) counts++
+        }
+        return counts
     }
 }

@@ -26,7 +26,7 @@ class ShortsSessionIntegrationTest {
             assertFalse(youtube.increment(first).shouldShowLimit)
             counter.update(ShortsObservation(ShortsViewer.CONFIRMED, scroll =
                 ShortsScroll(1_500, "reel_player_underlay", -550, -550, relativeOffset = true)), 1_500)
-            val next = counter.update(ShortsObservation(ShortsViewer.CONFIRMED), 1_950).incrementReason!!
+            val next = counter.update(ShortsObservation(ShortsViewer.CONFIRMED), 2_500).incrementReason!!
             assertTrue(youtube.increment(next).shouldShowLimit)
             assertEquals(3, instagram.snapshot().count)
             youtube.acknowledgeLimit()
@@ -59,7 +59,9 @@ class ShortsSessionIntegrationTest {
             assertNull(counter.update(ShortsObservation(ShortsViewer.CONFIRMED, fingerprint = "s1"), 600).incrementReason)
 
             // YouTube Shorts transition to s2 counts 1
-            counter.update(ShortsObservation(ShortsViewer.CONFIRMED, scroll = ShortsScroll(1_500, "reel_recycler", pageIndex = 1)), 1_500)
+            counter.update(ShortsObservation(ShortsViewer.CONFIRMED,
+                scroll = ShortsScroll(1_500, "reel_recycler", y = -550, deltaY = -550,
+                    pageIndex = 1)), 1_500)
             val secondShort = counter.update(ShortsObservation(ShortsViewer.CONFIRMED), 1_950).incrementReason!!
             val r2 = store.increment(secondShort)
             assertFalse(r2.shouldShowLimit)

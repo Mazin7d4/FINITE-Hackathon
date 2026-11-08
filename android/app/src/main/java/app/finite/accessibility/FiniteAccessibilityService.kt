@@ -20,7 +20,6 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
-import app.finite.BuildConfig
 import app.finite.MainActivity
 import app.finite.data.SessionStore
 
@@ -35,6 +34,11 @@ class FiniteAccessibilityService : AccessibilityService() {
     private var lastPackage: String? = null
     private var receiverRegistered = false
     private var lastShortsDiagnosticAt = 0L
+    private val reelFollowUp = Runnable {
+        if (store.snapshot().active && lastPackage == INSTAGRAM_PACKAGE && overlay == null) {
+            flushReels()
+        }
+    }
     private val shortsFollowUp = Runnable {
         if (store.snapshot().active && lastPackage == YOUTUBE_PACKAGE && overlay == null) {
             handleShorts(null)
@@ -47,7 +51,7 @@ class FiniteAccessibilityService : AccessibilityService() {
             if (explicitReset || sessionEnded) {
                 resetDetectionState()
                 dismissOverlay()
-                if (BuildConfig.DEBUG) Log.d("FINITE_SHORTS", "session reset; both detectors cleared")
+                Log.d(TAG, "session reset; both detectors cleared")
             }
         }
     }
@@ -83,6 +87,7 @@ class FiniteAccessibilityService : AccessibilityService() {
 
         if (lastPackage != packageName) {
             handler.removeCallbacks(shortsFollowUp)
+            handler.removeCallbacks(reelFollowUp)
             shortsCounter.suspend()
             if (lastPackage == INSTAGRAM_PACKAGE) {
                 reelCounter.platformSuspend(SystemClock.elapsedRealtime())
@@ -94,11 +99,13 @@ class FiniteAccessibilityService : AccessibilityService() {
             return
         }
 
+        handler.removeCallbacks(reelFollowUp)
         val detection = detector.inspect(event, rootInActiveWindow)
         logDiagnostic(event, detection)
 
         val now = SystemClock.elapsedRealtime()
         val decision = reelCounter.update(detection, now)
+        logDecision("Instagram", decision)
         if (decision.incrementReason != null) {
             recordCount(decision.incrementReason)
         } else if (!detection.isReelsViewer) {
@@ -106,6 +113,7 @@ class FiniteAccessibilityService : AccessibilityService() {
         } else if (decision.detail.startsWith("Reels viewer candidate")) {
             store.updateDetectorStatus("Reels viewer candidate — confirming identity")
         }
+        reelCounter.nextCheckDelay(now)?.let { handler.postDelayed(reelFollowUp, it) }
     }
 
     private fun handleShorts(event: AccessibilityEvent?) {
@@ -117,12 +125,11 @@ class FiniteAccessibilityService : AccessibilityService() {
         val observation = shortsDetector.inspect(event, rootInActiveWindow)
         val now = SystemClock.elapsedRealtime()
         val decision = shortsCounter.update(observation, now)
-        if (BuildConfig.DEBUG && (decision.incrementReason != null ||
+        if (decision.incrementReason != null ||
                 event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED ||
-                now - lastShortsDiagnosticAt >= 500L)
-        ) {
+                decision.detail.startsWith("rejected") || now - lastShortsDiagnosticAt >= 500L) {
             lastShortsDiagnosticAt = now
-            Log.d("FINITE_SHORTS", "t=$now event=${event?.let {
+            Log.d(TAG, "t=$now event=${event?.let {
                 AccessibilityEvent.eventTypeToString(it.eventType)
             } ?: "FOLLOW_UP"} viewer=${observation.viewer} blocked=${observation.blocked} " +
                 "scroll=${observation.scroll} decision=${decision.detail} ${observation.summary}")
@@ -131,6 +138,20 @@ class FiniteAccessibilityService : AccessibilityService() {
         if (overlay == null) {
             handler.removeCallbacks(shortsFollowUp)
             shortsCounter.nextCheckDelay(now)?.let { handler.postDelayed(shortsFollowUp, it) }
+        }
+    }
+
+    private fun flushReels() {
+        val now = SystemClock.elapsedRealtime()
+        val decision = reelCounter.flush(now)
+        logDecision("Instagram follow-up", decision)
+        decision.incrementReason?.let(::recordCount)
+        reelCounter.nextCheckDelay(now)?.let { handler.postDelayed(reelFollowUp, it) }
+    }
+
+    private fun logDecision(source: String, decision: ReelDecision) {
+        if (decision.incrementReason != null || decision.detail.startsWith("rejected")) {
+            Log.d(TAG, "$source decision=${decision.incrementReason ?: decision.detail}")
         }
     }
 
@@ -253,6 +274,7 @@ class FiniteAccessibilityService : AccessibilityService() {
 
     private fun resetDetectionState() {
         handler.removeCallbacks(shortsFollowUp)
+        handler.removeCallbacks(reelFollowUp)
         shortsCounter.reset()
         reelCounter.reset()
         lastPackage = null
@@ -260,6 +282,7 @@ class FiniteAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         handler.removeCallbacks(shortsFollowUp)
+        handler.removeCallbacks(reelFollowUp)
         shortsCounter.suspend()
         Log.w(TAG, "Accessibility service interrupted")
         store.updateDetectorStatus("Accessibility interrupted — reopen FINITE if counting stops")
@@ -267,6 +290,7 @@ class FiniteAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         handler.removeCallbacks(shortsFollowUp)
+        handler.removeCallbacks(reelFollowUp)
         if (receiverRegistered) {
             unregisterReceiver(lifecycleReceiver)
             receiverRegistered = false

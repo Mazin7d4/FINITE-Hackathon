@@ -132,6 +132,17 @@ class ReelDetectorTest {
         assertNotEquals(detection1.fingerprint, detection2.fingerprint)
     }
 
+    @Test fun fallbackAndAuthorFingerprintsExposeDifferentStrength() {
+        val event = mock(AccessibilityEvent::class.java)
+        val fallbackRoot = node("com.instagram.android:id/clips_viewer_view_pager")
+        setChildren(fallbackRoot, listOf(node("com.instagram.android:id/text_view", text = "preview text")))
+        val authorRoot = node("com.instagram.android:id/clips_viewer_view_pager")
+        setChildren(authorRoot, listOf(node("com.instagram.android:id/username", text = "creator")))
+
+        assertFalse(detector.inspect(event, fallbackRoot).strongFingerprint)
+        assertTrue(detector.inspect(event, authorRoot).strongFingerprint)
+    }
+
     private fun node(
         id: String,
         text: String? = null,
@@ -139,6 +150,7 @@ class ReelDetectorTest {
     ): AccessibilityNodeInfo {
         val node = mock(AccessibilityNodeInfo::class.java)
         `when`(node.viewIdResourceName).thenReturn(id)
+        `when`(node.isVisibleToUser).thenReturn(true)
         if (text != null) `when`(node.text).thenReturn(text)
         if (description != null) `when`(node.contentDescription).thenReturn(description)
         `when`(node.childCount).thenReturn(0)

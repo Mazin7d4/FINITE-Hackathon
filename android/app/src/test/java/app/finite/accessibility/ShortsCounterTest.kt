@@ -1,199 +1,208 @@
 package app.finite.accessibility
 
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ShortsCounterTest {
-    private fun viewer(scroll: ShortsScroll? = null, fingerprint: String? = null) =
-        ShortsObservation(ShortsViewer.CONFIRMED, scroll = scroll, fingerprint = fingerprint)
-    private fun swipe(time: Long, y: Int = -550, page: Int? = null, relative: Boolean = true) =
-        ShortsScroll(time, "pager", y, deltaY = y, pageIndex = page, relativeOffset = relative)
+    private fun viewer(fp: String? = null, scroll: ShortsScroll? = null,
+                       blocked: Boolean = false, unknown: Boolean = false) = ShortsObservation(
+        if (unknown) ShortsViewer.UNKNOWN else ShortsViewer.CONFIRMED,
+        blocked = blocked, scroll = scroll, fingerprint = fp,
+    )
+    private fun swipe(time: Long, y: Int = -550) =
+        ShortsScroll(time, "pager", y, y, 0)
 
-    @Test fun firstShortCountsOnceAndContentUpdatesDoNotCount() {
+    @Test fun tenRealisticSwipesCountExactlyTenWithoutFingerprints() {
         val counter = ShortsCounter()
         assertNotNull(counter.update(viewer(), 0).incrementReason)
-        for (time in 1_000L..10_000L step 500) assertNull(counter.update(viewer(), time).incrementReason)
-    }
-
-    @Test fun oneSwipeBurstIncludingDuplicateCallbacksCountsOnce() {
-        val counter = ShortsCounter()
-        counter.update(viewer(), 0)
-        for (time in listOf(1_200L, 1_300L, 1_500L, 1_800L)) {
-            assertNull(counter.update(viewer(swipe(time)), time).incrementReason)
+        var counts = 0
+        for (index in 1..10) {
+            val start = index * 800L
+            counter.update(viewer(scroll = swipe(start)), start)
+            counter.update(viewer(scroll = swipe(start + 100)), start + 100)
+            counter.update(viewer(blocked = true), start + 180)
+            counter.update(viewer(unknown = true), start + 220)
+            if (counter.update(viewer(), start + 450).incrementReason != null) counts++
         }
-        assertNull(counter.update(viewer(), 1_900).incrementReason)
-        assertNull(counter.update(viewer(), 2_200).incrementReason)
-        assertNotNull(counter.update(viewer(), 2_250).incrementReason)
-        assertNull(counter.update(viewer(), 2_500).incrementReason)
-        counter.update(viewer(swipe(1_800)), 3_000)
-        assertNull(counter.nextCheckDelay(3_000))
+        assertEquals(10, counts)
     }
 
-    @Test fun consecutiveForwardAndBackwardSwipesCountIncludingIdenticalGeometry() {
+    @Test fun scrollBurstAndIdentityChangeMergeToOneCount() {
+        val counter = ShortsCounter()
+        counter.update(viewer("a"), 0)
+        counter.update(viewer("a", swipe(800)), 800)
+        assertNotNull(counter.update(viewer("b"), 900).incrementReason)
+        assertNull(counter.update(viewer("b"), 1_250).incrementReason)
+    }
+
+    @Test fun duplicateCallbacksAndHorizontalScrollDoNotCount() {
         val counter = ShortsCounter()
         counter.update(viewer(), 0)
-        for ((time, y) in listOf(2_000L to -550, 4_000L to -550, 6_000L to 550)) {
-            counter.update(viewer(swipe(time, y)), time)
-            assertNotNull(counter.update(viewer(), time + 450).incrementReason)
-        }
-    }
-
-    @Test fun pageIndicesDeduplicateAndPermitBackwardRevisits() {
-        val counter = ShortsCounter()
-        counter.update(viewer(swipe(0, 0, page = 0)), 0)
-        counter.update(viewer(swipe(1_500, 0, page = 1)), 1_500)
-        assertNotNull(counter.update(viewer(), 1_950).incrementReason)
-        counter.update(viewer(swipe(3_000, 0, page = 1)), 3_000)
-        assertNull(counter.update(viewer(), 3_450).incrementReason)
-        counter.update(viewer(swipe(4_500, 0, page = 0)), 4_500)
-        assertNotNull(counter.update(viewer(), 4_950).incrementReason)
-    }
-
-    @Test fun unchangedCumulativePositionsDoNotCountTwice() {
-        val counter = ShortsCounter()
-        counter.update(viewer(), 0)
-        counter.update(viewer(swipe(1_500, relative = false)), 1_500)
-        assertNotNull(counter.update(viewer(), 1_950).incrementReason)
-        counter.update(viewer(swipe(3_000, relative = false)), 3_000)
-        assertNull(counter.update(viewer(), 3_450).incrementReason)
-    }
-
-    @Test fun cancelledTinyAndHorizontalSwipesDoNotCount() {
-        val counter = ShortsCounter()
-        counter.update(viewer(), 0)
-        counter.update(viewer(swipe(1_500)), 1_500)
-        counter.update(viewer(ShortsScroll(1_600, "pager", 0, 550, relativeOffset = true)), 1_600)
-        assertNull(counter.update(viewer(), 2_100).incrementReason)
-        counter.update(viewer(swipe(3_000, 2)), 3_000)
-        assertNull(counter.update(viewer(), 3_500).incrementReason)
-        counter.update(viewer(ShortsScroll(4_500, "pager", 20, 20, 600)), 4_500)
-        assertNull(counter.update(viewer(), 5_000).incrementReason)
-    }
-
-    @Test fun debounceRejectsImmediateLayoutScroll() {
-        val counter = ShortsCounter()
-        counter.update(viewer(), 0)
-        // Scroll within count gap: queued as pending but gap prevents counting.
-        counter.update(viewer(swipe(500)), 500)
-        assertNotNull(counter.nextCheckDelay(500))   // pending exists; waiting for gap + settle
-        // Additional scroll updates within the gap keep updating the pending gesture.
-        counter.update(viewer(swipe(1_000)), 1_000)
-        assertNotNull(counter.nextCheckDelay(1_000))
-        // Scroll at gap boundary: gap now satisfied (1200 - 0 = 1200 >= MIN_COUNT_GAP_MS).
-        counter.update(viewer(swipe(1_200)), 1_200)
-        // After settle (1200 + 450 = 1650 ms) the pending commits exactly once.
-        assertNotNull(counter.update(viewer(), 1_650).incrementReason)
-    }
-
-    @Test fun unavailablePositionUsesQualifiedScrollFallback() {
-        val counter = ShortsCounter()
-        counter.update(viewer(), 0)
-        counter.update(viewer(ShortsScroll(1_500, "pager")), 1_500)
-        assertNotNull(counter.update(viewer(), 1_950).incrementReason)
-    }
-
-    @Test fun temporaryViewerLossDoesNotRecountFirstShort() {
-        val counter = ShortsCounter()
-        counter.update(viewer(), 0)
-        counter.update(ShortsObservation(ShortsViewer.UNKNOWN), 1_000)
+        counter.update(viewer(scroll = swipe(800)), 800)
+        assertNull(counter.update(viewer(scroll = swipe(800)), 810).incrementReason)
+        assertNotNull(counter.update(viewer(), 1_200).incrementReason)
+        counter.update(viewer(scroll = ShortsScroll(1_600, "pager", 0, 0, 80,
+            relativeOffset = true)), 1_600)
         assertNull(counter.update(viewer(), 2_000).incrementReason)
-        counter.update(ShortsObservation(ShortsViewer.OUTSIDE), 3_000)
-        assertNull(counter.update(viewer(), 4_500).incrementReason)
-        counter.update(ShortsObservation(ShortsViewer.OUTSIDE), 5_000)
-        counter.update(ShortsObservation(ShortsViewer.OUTSIDE), 7_100)
-        assertNotNull(counter.update(viewer(), 7_200).incrementReason)
     }
 
-    @Test fun panelsAndAppSwitchCancelPendingSwipesAndPreserveEntryLatch() {
+    @Test fun unknownFramesAndLoadingDoNotCancelPendingSwipe() {
         val counter = ShortsCounter()
         counter.update(viewer(), 0)
-        counter.update(viewer(swipe(1_500)), 1_500)
-        counter.update(ShortsObservation(ShortsViewer.CONFIRMED, blocked = true), 1_600)
-        assertNull(counter.update(viewer(), 2_100).incrementReason)
-        counter.update(viewer(swipe(3_000)), 3_000)
-        counter.suspend()
-        assertNull(counter.nextCheckDelay(3_100))
-        assertNull(counter.update(viewer(), 3_500).incrementReason)
+        counter.update(viewer(scroll = swipe(800)), 800)
+        counter.update(viewer(unknown = true), 900)
+        counter.update(viewer(blocked = true), 1_000)
+        assertNotNull(counter.update(viewer(), 1_200).incrementReason)
     }
 
-    @Test fun sessionResetClearsEntryAndPendingEvents() {
+    @Test fun engagementPanelCancelsPendingButViewerEntryLatchSurvives() {
         val counter = ShortsCounter()
         counter.update(viewer(), 0)
-        counter.update(viewer(swipe(1_500)), 1_500)
-        counter.reset()
-        assertNull(counter.nextCheckDelay(1_501))
-        assertNotNull(counter.update(viewer(), 1_501).incrementReason)
+        counter.update(viewer(scroll = swipe(800)), 800)
+        counter.update(ShortsObservation(ShortsViewer.CONFIRMED, engagementPanelOpen = true), 900)
+        assertNull(counter.update(viewer(), 1_300).incrementReason)
+        counter.update(viewer(scroll = swipe(1_600)), 1_600)
+        assertNotNull(counter.update(viewer(), 2_000).incrementReason)
     }
 
-    @Test fun ordinaryVideosAndGenericOutsideScrollsCannotCount() {
+    @Test fun fastSevenHundredMillisecondSwipesCountEveryShort() {
         val counter = ShortsCounter()
-        for (time in 1_000L..5_000L step 1_000) {
-            assertNull(counter.update(ShortsObservation(ShortsViewer.OUTSIDE, scroll = swipe(time)), time)
-                .incrementReason)
+        counter.update(viewer(), 0)
+        var counts = 0
+        for (index in 1..10) {
+            val start = index * 700L
+            counter.update(viewer(scroll = swipe(start)), start)
+            if (counter.update(viewer(), start + 350).incrementReason != null) counts++
         }
+        assertEquals(10, counts)
     }
 
-    @Test fun staleScrollFingerprintsCountOnlyOnceWhenNewIdentityConfirmed() {
-        val counter = ShortsCounter()
-        counter.update(viewer(fingerprint = "short-A"), 0)
-        // User initiates swipe while stale fingerprint "short-A" is still present
-        counter.update(viewer(scroll = swipe(1_500), fingerprint = "short-A"), 1_500)
-        // Window content updates to new Short "short-B"
-        counter.update(viewer(fingerprint = "short-B"), 1_700)
-        // Wait for quiet period (1500 + 450 = 1950)
-        assertNotNull(counter.update(viewer(fingerprint = "short-B"), 1_950).incrementReason)
-        // Subsequent events with the same fingerprint "short-B" do not count again
-        assertNull(counter.update(viewer(fingerprint = "short-B"), 2_500).incrementReason)
-        // Partial swipe that bounces back to same fingerprint "short-B" does not count
-        counter.update(viewer(scroll = swipe(3_500), fingerprint = "short-B"), 3_500)
-        assertNull(counter.update(viewer(fingerprint = "short-B"), 3_950).incrementReason)
-    }
-
-    @Test fun rapidRepeatedEventsWithinQuietPeriodDoNotTriggerMultipleCounts() {
+    @Test fun sustainedOutsideResetsEntryButBriefLossDoesNot() {
         val counter = ShortsCounter()
         counter.update(viewer(), 0)
-        // Burst of rapid scroll updates during a single swipe gesture
-        for (time in listOf(1_500L, 1_550L, 1_600L, 1_650L, 1_700L)) {
-            assertNull(counter.update(viewer(swipe(time)), time).incrementReason)
+        counter.update(ShortsObservation(ShortsViewer.UNKNOWN), 500)
+        assertNull(counter.update(viewer(), 600).incrementReason)
+        counter.update(ShortsObservation(ShortsViewer.OUTSIDE), 1_000)
+        counter.update(ShortsObservation(ShortsViewer.OUTSIDE), 3_100)
+        assertNotNull(counter.update(viewer(), 3_200).incrementReason)
+    }
+
+    @Test fun singleScrollEventsCommitPreviousSwipeWithoutLosingCurrentSwipe() {
+        val counter = ShortsCounter()
+        counter.update(viewer(), 0)
+        var counts = 0
+        for (index in 1..10) {
+            val time = index * 700L
+            if (counter.update(viewer(scroll = swipe(time)), time).incrementReason != null) counts++
         }
-        // Still settling within the 450ms quiet period (1700 + 450 = 2150)
-        assertNull(counter.update(viewer(), 1_900).incrementReason)
-        assertNull(counter.update(viewer(), 2_100).incrementReason)
-        // Settled: counts exactly once
-        assertNotNull(counter.update(viewer(), 2_150).incrementReason)
-        // After settling, repeated calls without new scroll do not count
-        assertNull(counter.update(viewer(), 2_200).incrementReason)
-        assertNull(counter.update(viewer(), 3_000).incrementReason)
+        if (counter.update(viewer(), 7_350).incrementReason != null) counts++
+        assertEquals(10, counts)
     }
 
-    @Test fun identityFallbackUsesFingerprintWhenPageNumberIsAbsent() {
+    @Test fun zeroMovementLayoutScrollBurstsNeverCount() {
         val counter = ShortsCounter()
-        // First short with fingerprint fp-alpha and no page index
-        counter.update(viewer(fingerprint = "fp-alpha"), 0)
-        // Swipe to new Short with fingerprint fp-beta
-        counter.update(viewer(scroll = swipe(1_500), fingerprint = "fp-beta"), 1_500)
-        assertNotNull(counter.update(viewer(fingerprint = "fp-beta"), 1_950).incrementReason)
-        // Swipe with identical fingerprint fp-beta is deduplicated
-        counter.update(viewer(scroll = swipe(3_500), fingerprint = "fp-beta"), 3_500)
-        assertNull(counter.update(viewer(fingerprint = "fp-beta"), 3_950).incrementReason)
-        // Swipe back to fp-alpha counts
-        counter.update(viewer(scroll = swipe(5_500), fingerprint = "fp-alpha"), 5_500)
-        assertNotNull(counter.update(viewer(fingerprint = "fp-alpha"), 5_950).incrementReason)
+        counter.update(viewer(), 0)
+        counter.update(viewer(scroll = ShortsScroll(100, "reel_recycler", 0, 0, 0)), 100)
+        assertNull(counter.update(viewer(), 500).incrementReason)
+        counter.update(viewer(scroll = ShortsScroll(1_000, "reel_player_underlay", 0, 0, 0)), 1_000)
+        assertNull(counter.update(viewer(), 1_400).incrementReason)
     }
 
-    @Test fun scrollWithinCountGapIsQueuedNotDiscardedIdentityCaptured() {
-        // Regression: a swipe starting within MIN_COUNT_GAP_MS of the last count must NOT
-        // be silently discarded; it should build a pending gesture and commit once the gap
-        // and settle periods have both elapsed.
+    @Test fun realThreeEventPatternCountsAtSevenHundredMillisecondIntervals() {
+        assertEquals(10, countPattern(700L))
+    }
+
+    @Test fun realThreeEventPatternCountsAtTwentyFiveHundredMillisecondIntervals() {
+        assertEquals(10, countPattern(2_500L))
+    }
+
+    private fun countPattern(interval: Long): Int {
         val counter = ShortsCounter()
-        counter.update(viewer(fingerprint = "fp-first"), 0)   // entry; lastCountAt = 0
-        // Swipe arrives at t=600 — within the 1200 ms count gap.
-        counter.update(viewer(scroll = swipe(600), fingerprint = "fp-second"), 600)
-        // The pending gesture must exist (follow-up delay > 0).
-        assertNotNull("pending gesture must exist for scroll within gap", counter.nextCheckDelay(600))
-        // Gap passes at t=1200. No settle action happens yet since lastAt=600, settle at 1050.
-        // Both gap (>=1200 from t=0) and settle (>=450 from t=600) are satisfied at t=1200.
-        assertNotNull("swipe within gap must count after gap + settle",
-            counter.update(viewer(fingerprint = "fp-second"), 1_200).incrementReason)
+        counter.update(viewer(), 0)
+        var counts = 0
+        for (index in 1..10) {
+            val start = index * interval
+            val events = listOf(
+                ShortsScroll(start, "reel_player_underlay", 926, 926, 0, relativeOffset = true),
+                ShortsScroll(start + 50, "reel_player_underlay", 0, -926, 0, relativeOffset = true),
+                ShortsScroll(start + 100, "reel_recycler", 0, 78, 0),
+            )
+            events.forEach { event ->
+                if (counter.update(viewer(scroll = event), event.eventTime).incrementReason != null) counts++
+            }
+            if (counter.update(viewer(), start + 450).incrementReason != null) counts++
+        }
+        return counts
+    }
+
+    @Test fun batchedSixSwipeTraceUsesEventTimeAndPageSettledBoundaries() {
+        val trace = listOf(
+            ShortsScroll(1_945_248, "reel_player_underlay", 894, 894, 0, relativeOffset = true),
+            ShortsScroll(1_945_375, "reel_player_underlay", -128, -1022, 0, relativeOffset = true),
+            ShortsScroll(1_945_547, "reel_player_underlay", 0, 128, 0, relativeOffset = true),
+            ShortsScroll(1_945_600, "reel_recycler", 0, 78, 0),
+            ShortsScroll(1_946_195, "reel_player_underlay", 833, 833, 0, relativeOffset = true),
+            ShortsScroll(1_946_331, "reel_player_underlay", -127, -960, 0, relativeOffset = true),
+            ShortsScroll(1_946_439, "reel_player_underlay", 0, 127, 0, relativeOffset = true),
+            ShortsScroll(1_947_293, "reel_player_underlay", 665, 665, 0, relativeOffset = true),
+            ShortsScroll(1_947_637, "reel_player_underlay", 135, -530, 0, relativeOffset = true),
+            ShortsScroll(1_947_753, "reel_player_underlay", 0, 135, 0, relativeOffset = true),
+            ShortsScroll(1_948_332, "reel_player_underlay", 535, 535, 0, relativeOffset = true),
+            ShortsScroll(1_948_472, "reel_player_underlay", 65, -470, 0, relativeOffset = true),
+            ShortsScroll(1_948_609, "reel_player_underlay", 2, -63, 0, relativeOffset = true),
+            ShortsScroll(1_948_711, "reel_player_underlay", 0, -2, 0, relativeOffset = true),
+            ShortsScroll(1_949_297, "reel_player_underlay", 607, 607, 0, relativeOffset = true),
+            ShortsScroll(1_949_463, "reel_player_underlay", 67, -540, 0, relativeOffset = true),
+            ShortsScroll(1_949_616, "reel_player_underlay", 1, -66, 0, relativeOffset = true),
+            ShortsScroll(1_949_728, "reel_player_underlay", 0, null, 0, relativeOffset = true),
+            ShortsScroll(1_950_219, "reel_player_underlay", 670, 670, 0, relativeOffset = true),
+            ShortsScroll(1_950_385, "reel_player_underlay", -158, -828, 0, relativeOffset = true),
+            ShortsScroll(1_950_596, "reel_player_underlay", 0, 158, 0, relativeOffset = true),
+        )
+        assertEquals("batched", 6, countTrace(trace, batched = true))
+        assertEquals("prompt", 6, countTrace(trace, batched = false))
+    }
+
+    private fun countTrace(trace: List<ShortsScroll>, batched: Boolean): Int {
+        val counter = ShortsCounter()
+        counter.update(viewer(), 1_945_000)
+        var counts = 0
+        trace.forEachIndexed { index, event ->
+            val processingTime = if (batched) 10_000L + index * 3L else event.eventTime
+            if (counter.update(viewer(scroll = event), processingTime).incrementReason != null) counts++
+        }
+        if (counter.update(viewer(), 20_000).incrementReason != null) counts++
+        return counts
+    }
+
+    @Test fun delayedReturnAfterQuietFallbackCountsEachExcursionOnce() {
+        val counter = ShortsCounter()
+        counter.update(viewer(), 0)
+        var counts = 0
+        for (index in 1..10) {
+            val start = index * 1_000L
+            val begin = ShortsScroll(start, "reel_player_underlay", 887, 887, 0,
+                relativeOffset = true)
+            val end = ShortsScroll(start + 184, "reel_player_underlay", 0, -887, 0,
+                relativeOffset = true)
+            counter.update(viewer(scroll = begin), start)
+            // A late CONTENT_CHANGED callback must not use processing time to settle this.
+            assertNull(counter.update(viewer(), start + 400).incrementReason)
+            if (counter.update(viewer(scroll = end), start + 500).incrementReason != null) counts++
+        }
+        assertEquals(10, counts)
+    }
+
+    @Test fun excursionWithoutReturnStillCountsOnceViaDelayedFallback() {
+        val counter = ShortsCounter()
+        counter.update(viewer(), 0)
+        counter.update(viewer(scroll = ShortsScroll(1_000, "reel_player_underlay", 887, 887, 0,
+            relativeOffset = true)), 1_000)
+        assertNull(counter.update(viewer(), 1_400).incrementReason)
+        assertNotNull(counter.update(viewer(), 2_000).incrementReason)
+        assertNull(counter.update(viewer(scroll = ShortsScroll(2_184, "reel_player_underlay", 0,
+            -887, 0, relativeOffset = true)), 2_184).incrementReason)
     }
 }

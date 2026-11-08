@@ -39,6 +39,7 @@ internal class ShortsDetector {
                 node.getChild(index)?.let(queue::addLast)
             }
         }
+        val engagementPanelOpen = ENGAGEMENT_PANEL_IDS.any(ids::contains)
         val blocked = BLOCKING_IDS.any(ids::contains)
         val viewer = when {
             "watch_player" in ids -> ShortsViewer.OUTSIDE
@@ -70,7 +71,7 @@ internal class ShortsDetector {
         } else null
         return ShortsObservation(viewer, blocked, scroll,
             "signature=${VIEWER_IDS.count(ids::contains)}/3 source=$sourceId fp=${fingerprint ?: "none"} nodes=$visited",
-            fingerprint)
+            fingerprint, engagementPanelOpen)
     }
 
     private fun resourceId(value: String?): String? =
@@ -98,6 +99,8 @@ internal class ShortsDetector {
         private val SCROLL_IDS = setOf("reel_player_underlay", "reel_recycler")
         private val BLOCKING_IDS = setOf("app_engagement_panel", "engagement_panel",
             "engagement_panel_content", "reel_playback_loading_spinner", "reel_player_end_page_container")
+        private val ENGAGEMENT_PANEL_IDS = setOf("app_engagement_panel", "engagement_panel",
+            "engagement_panel_content")
         private val OUTSIDE_IDS = setOf("results", "results_recycler_view", "search_box",
             "search_edit_text", "browse_fragment_layout_coordinator_layout")
         private val RESOURCE_ID = Regex("com\\.google\\.android\\.youtube:id/[A-Za-z0-9_]{1,100}")
