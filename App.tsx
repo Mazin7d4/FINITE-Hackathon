@@ -17,8 +17,7 @@ import {finiteGradientColors} from './src/screens/theme';
 import {FiniteNative} from './src/native/finite';
 import {DEFAULT_SCHEDULE, normalizeSchedule, normalizeTrackedApps, isScheduleActive} from './src/domain/finitePolicy';
 import {dashboardHistory, destinationAfterAppsSaved, destinationForSignedInProfile} from './src/domain/flowPolicy';
-import {GUEST_SESSION, sessionDestination, sessionStorageKey, type SessionIdentity} from './src/domain/guestPolicy';
-import {restoreRecurringReminders} from './src/domain/profileSecurity';
+import {GUEST_SESSION, hasLegacyAlarmReminder, readNativeReminders, sessionDestination, sessionStorageKey, type SessionIdentity} from './src/domain/guestPolicy';
 
 type Screen = 'login' | 'signup' | 'choose-apps' | 'choose-schedule' | 'personalize' | 'review' | 'reminder' | 'home';
 type Profile = {name: string; email: string; passwordSalt: string; passwordHash: string; passwordIterations: number};
@@ -30,7 +29,7 @@ const defaultState = (): StoredState => ({selectedApps: ['instagram', 'youtube']
 export default function App(): React.JSX.Element {
   const [screen, setScreen] = useState<Screen>('login');
   const [history, setHistory] = useState<Screen[]>([]);
-  const [profile, setProfile] = useState<Profile>();
+  const [_profile, setProfile] = useState<Profile>();
   const [identity, setIdentity] = useState<SessionIdentity>();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedApps, setSelectedApps] = useState<string[]>(defaultState().selectedApps);
@@ -48,7 +47,7 @@ export default function App(): React.JSX.Element {
     if (savedGoal) { try { next.goal = JSON.parse(savedGoal) as PersonalGoal; } catch {} }
     if (savedApps) { try { next.selectedApps = normalizeTrackedApps(JSON.parse(savedApps)); } catch {} }
     if (savedSchedule) { try { const parsed = JSON.parse(savedSchedule) as Partial<ScheduleSettings>; next.schedule = {id: parsed.id === 'weekdays' || parsed.id === 'busy_week' || parsed.id === 'exam_week' ? parsed.id : 'exam_week', ...normalizeSchedule(parsed)}; } catch {} }
-    if (savedReminders) { try { const parsed = JSON.parse(savedReminders) as ReminderRecord[]; next.reminders = parsed.filter(item => item && typeof item.id === 'string' && item.timestamp); } catch {} }
+    if (savedReminders) { try { const parsed: unknown = JSON.parse(savedReminders); next.reminders = readNativeReminders(parsed) as ReminderRecord[]; if (!session && hasLegacyAlarmReminder(parsed)) await AsyncStorage.removeItem(LEGACY.reminders); } catch {} }
     return next;
   };
   const applyState = (state: StoredState) => { setGoal(state.goal); setSelectedApps(state.selectedApps); setSchedule(state.schedule); setReminders(state.reminders); };
@@ -71,7 +70,7 @@ export default function App(): React.JSX.Element {
         setProfiles(savedProfiles);
         if (signedProfile) { const accountIdentity = {kind: 'account' as const, email: signedProfile.email}; const savedState = await readState(accountIdentity); setIdentity(accountIdentity); setProfile(signedProfile); applyState(savedState); await restoreReminders(savedState.reminders, accountIdentity); setScreen(destinationForSignedInProfile(Boolean(savedState.goal))); }
         else if (signedIn === GUEST_SESSION) { const savedState = await readState(GUEST_SESSION); setIdentity(GUEST_SESSION); applyState(savedState); await restoreReminders(savedState.reminders, GUEST_SESSION); setScreen(sessionDestination(Boolean(savedState.goal))); }
-        else applyState(await readState());
+        else { const savedState = await readState(); applyState(savedState); await restoreReminders(savedState.reminders); }
       } catch (error) { console.warn('Unable to load saved FINITE setup', error); }
       finally { if (mounted) setStorageLoaded(true); }
     })();
@@ -102,15 +101,15 @@ export default function App(): React.JSX.Element {
     await FiniteNative.configure(next.dailyLimit, selectedApps, schedule.enabled ? schedule.days : [0, 1, 2, 3, 4, 5, 6], schedule.enabled ? schedule.startMinute : 0, schedule.enabled ? schedule.endMinute : 0);
     setGoal(next);
   };
-  const persistReminders = async (next: ReminderRecord[]) => { setReminders(next); try { await saveValueForCurrentProfile('reminders', next); } catch { Alert.alert('Could not save reminder', 'Your reminder change was not saved. Please try again.'); throw new Error('reminder-save-failed'); } };
+  const persistReminders = async (next: ReminderRecord[]) => { await saveValueForCurrentProfile('reminders', next); setReminders(next); };
 
   const restoreReminders = async (saved: ReminderRecord[], session?: SessionIdentity) => {
-    const restored = restoreRecurringReminders(saved, Date.now());
-    if (session && JSON.stringify(restored) !== JSON.stringify(saved)) {
+    const restored = readNativeReminders(saved).filter(item => item.videoCount <= 100) as ReminderRecord[];
+    if (session && restored.length !== saved.length) {
       await AsyncStorage.setItem(sessionStorageKey(session, 'reminders'), JSON.stringify(restored));
       setReminders(restored);
     }
-    await Promise.all(restored.map(item => FiniteNative.scheduleReminder(item.id, item.timestamp, item.videoCount, item.repeat).catch(error => console.warn('Unable to restore reminder', item.id, error))));
+    await FiniteNative.syncReminders(restored).catch(error => console.warn('Unable to reconcile reminders', error));
   };
 
   useEffect(() => { if (storageLoaded && goal) void FiniteNative.configure(goal.dailyLimit, selectedApps, schedule.enabled ? schedule.days : [0, 1, 2, 3, 4, 5, 6], schedule.enabled ? schedule.startMinute : 0, schedule.enabled ? schedule.endMinute : 0).catch(error => console.warn('Unable to sync FINITE native policy', error)); }, [storageLoaded, goal, selectedApps, schedule]);
@@ -151,7 +150,7 @@ export default function App(): React.JSX.Element {
       const state = identity === GUEST_SESSION || !migrated ? sourceState : defaultState();
       for (const [key, value] of Object.entries({goal: state.goal, selectedApps: state.selectedApps, schedule: state.schedule, reminders: state.reminders})) if (value !== undefined) await AsyncStorage.setItem(sessionStorageKey(accountIdentity, key), JSON.stringify(value));
       if (identity !== GUEST_SESSION && !migrated) { await AsyncStorage.multiRemove(Object.values(LEGACY)); await AsyncStorage.setItem(AUTH.legacyMigrated, '1'); }
-      setIdentity(accountIdentity); applyState(state); setHistory([]); setScreen(destinationForSignedInProfile(Boolean(state.goal)));
+      setIdentity(accountIdentity); applyState(state); await restoreReminders(state.reminders, accountIdentity); setHistory([]); setScreen(destinationForSignedInProfile(Boolean(state.goal)));
     } catch (error) { Alert.alert('Could not create local profile', 'Your profile could not be saved. Please try again.'); console.warn('Unable to create local profile', error); }
   };
   const clearLogout = async () => { try { await FiniteNative.endSession(); await FiniteNative.cancelAllReminders(); } catch (error) { Alert.alert('Could not finish logout', 'Your local profile was cleared from this screen, but native cleanup failed. Reopen FINITE and try again.'); console.warn('Unable to clean up native session', error); } finally { try { await AsyncStorage.removeItem(AUTH.signedIn); } catch (error) { console.warn('Unable to clear local sign-in state', error); } setIdentity(undefined); setProfile(undefined); setGoal(undefined); setReminders([]); setHistory([]); setScreen('login'); } };
@@ -163,7 +162,7 @@ export default function App(): React.JSX.Element {
   else if (screen === 'choose-apps') content = <ChooseApp initialSelectedApps={selectedApps} onContinue={async apps => { try { await persistApps(apps); const next = destinationAfterAppsSaved(editing); if (next === 'review') dashboard(); else navigate(next); } catch {} }} />;
   else if (screen === 'choose-schedule') content = <ChooseSchedule initialSchedule={schedule.id} initialSettings={schedule} onBack={goBack} onContinue={async next => { try { await persistSchedule(next); if (editing) dashboard(); else navigate('personalize'); } catch {} }} />;
   else if (screen === 'personalize') content = <PersonalizeGoal initialGoal={goal} scheduleId={schedule.id} scheduleLabel={schedule.id === 'weekdays' ? 'Weekdays' : schedule.id === 'busy_week' ? 'Busy week' : 'Exam week'} onBack={goBack} onSave={persistGoal} />;
-  else if (screen === 'reminder') content = <Reminder editingReminder={reminders.find(item => item.id === editingReminderId)} savedReminders={reminders} onEdit={id => setEditingReminderId(id)} onAddNew={() => setEditingReminderId(undefined)} onBack={goBack} onClose={goBack} onDelete={async id => { try { await FiniteNative.cancelReminder(id); await persistReminders(reminders.filter(item => item.id !== id)); if (editingReminderId === id) setEditingReminderId(undefined); } catch (error) { console.warn('Unable to delete reminder', error); } }} onSave={async settings => { try { const id = settings.id ?? `reminder-${Date.now()}`; await FiniteNative.scheduleReminder(id, settings.timestamp, settings.videoCount, settings.repeat); await persistReminders([...reminders.filter(item => item.id !== id), {...settings, id}]); Alert.alert('Reminder saved', 'FINITE will remind you on this device.', [{text: 'Done', onPress: dashboard}]); } catch (error) { if ((error as {code?: string}).code === 'INVALID_REMINDER_TIME') Alert.alert('Choose a future time', 'This reminder time has already passed. Pick a later date or time.'); else Alert.alert('Notifications are off', 'Allow FINITE notifications in Android settings, then save this reminder again.', [{text: 'Allow', onPress: () => { void FiniteNative.requestNotificationPermission(); }}, {text: 'Cancel', style: 'cancel'}]); } }} />;
+  else if (screen === 'reminder') content = <Reminder dailyLimit={goal?.dailyLimit ?? 8} editingReminder={reminders.find(item => item.id === editingReminderId)} savedReminders={reminders} onEdit={id => setEditingReminderId(id)} onAddNew={() => setEditingReminderId(undefined)} onBack={goBack} onClose={goBack} onDelete={async id => { const previous = reminders.find(item => item.id === id); try { await FiniteNative.cancelReminder(id); await persistReminders(reminders.filter(item => item.id !== id)); if (editingReminderId === id) setEditingReminderId(undefined); } catch (error) { if (previous) await FiniteNative.scheduleReminder(previous.id, previous.videoCount).catch(() => undefined); console.warn('Unable to delete reminder', error); } }} onSave={async settings => { const id = settings.id ?? `reminder-${Date.now()}`; const previous = reminders.find(item => item.id === id); const next = [...reminders.filter(item => item.id !== id), {...settings, id}]; try { await FiniteNative.scheduleReminder(id, settings.videoCount); await persistReminders(next); Alert.alert('Reminder ready', `FINITE will check in when you reach video ${settings.videoCount}.`, [{text: 'Done', onPress: dashboard}]); } catch (error) { await (previous ? FiniteNative.scheduleReminder(previous.id, previous.videoCount) : FiniteNative.cancelReminder(id)).catch(() => undefined); console.warn('Unable to save video reminder', error); Alert.alert('Could not save reminder', 'Please try again while FINITE is open.'); } }} />;
   else if (screen === 'home') content = <FiniteScreen initialLimit={goal?.dailyLimit} onLimitSaved={persistSessionLimit} scheduleStatus={!schedule.enabled ? 'Schedule off · all day' : isScheduleActive(new Date(), schedule) ? 'Active window' : 'Outside active window'} onBack={goBack} />;
   else content = <UsageReview selectedApps={selectedApps} dailyLimit={goal?.dailyLimit ?? 7} schedule={schedule} onBack={() => BackHandler.exitApp()} onStartScrolling={() => navigate('home')} onAddReminder={() => { setEditingReminderId(undefined); openEditor('reminder'); }} onEditApps={() => openEditor('choose-apps')} onEditSchedule={() => openEditor('choose-schedule')} onEditGoal={() => openEditor('personalize')} onLogout={clearLogout} />;
   return <SafeAreaProvider>{content}</SafeAreaProvider>;

@@ -1,33 +1,21 @@
-import React, { useState } from "react";
+import React, {useEffect, useMemo, useState} from 'react';
 import {
-  Alert,
   Pressable,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   View,
-} from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { FiniteNative } from "../native/finite";
-import { finiteColors, finiteGradientColors } from "./theme";
+} from 'react-native';
+import {LinearGradient} from 'expo-linear-gradient';
+import {SafeAreaView} from 'react-native-safe-area-context';
+import {finiteColors, finiteGradientColors} from './theme';
 
-type RepeatOption = "Never" | "Every day" | "Every week";
-type DateMode = "today" | "choose_date";
-
-export type ReminderSettings = {
-  id?: string;
-  videoCount: number;
-  dateMode: DateMode;
-  date: string;
-  repeat: RepeatOption;
-  timestamp: number;
-};
-
-export type ReminderRecord = ReminderSettings & { id: string };
+export type ReminderSettings = {id?: string; videoCount: number};
+export type ReminderRecord = ReminderSettings & {id: string};
 
 type Props = {
+  dailyLimit: number;
   initialVideoCount?: number;
   onBack?: () => void;
   onClose?: () => void;
@@ -39,15 +27,8 @@ type Props = {
   onAddNew?: () => void;
 };
 
-const formatReminderDate = (value: Date) => value.toLocaleString([], {
-  weekday: "short",
-  month: "short",
-  day: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-});
-
 export default function AddReminder({
+  dailyLimit,
   initialVideoCount = 4,
   onBack,
   onClose,
@@ -58,232 +39,143 @@ export default function AddReminder({
   onEdit,
   onAddNew,
 }: Props): React.JSX.Element {
-  const [videoCount, setVideoCount] = useState(
-    Math.max(1, Math.min(100, initialVideoCount)),
+  const safeLimit = Math.max(1, Math.min(100, Math.round(dailyLimit)));
+  const maximumReminder = Math.max(1, safeLimit - 1);
+  const initialCount = Math.min(maximumReminder, Math.max(1, editingReminder?.videoCount ?? initialVideoCount));
+  const [videoCount, setVideoCount] = useState(initialCount);
+
+  useEffect(() => {
+    setVideoCount(Math.min(maximumReminder, Math.max(1, editingReminder?.videoCount ?? initialVideoCount)));
+  }, [editingReminder, initialVideoCount, maximumReminder]);
+
+  const remaining = Math.max(0, safeLimit - videoCount);
+  const progress = `${Math.min(100, Math.max(8, (videoCount / safeLimit) * 100))}%` as `${number}%`;
+  const sortedReminders = useMemo(
+    () => [...savedReminders].sort((a, b) => a.videoCount - b.videoCount),
+    [savedReminders],
   );
-  const [dateMode, setDateMode] = useState<DateMode>(editingReminder?.dateMode ?? "choose_date");
-  const [date, setDate] = useState(formatReminderDate(new Date(editingReminder?.timestamp ?? Date.now() + 60 * 60 * 1000)));
-  const [repeat, setRepeat] = useState<RepeatOption>(editingReminder?.repeat ?? "Never");
-  const [reminderDate, setReminderDate] = useState(() => new Date(editingReminder?.timestamp ?? Date.now() + 60 * 60 * 1000));
-
-  React.useEffect(() => {
-    setVideoCount(Math.max(1, Math.min(100, editingReminder?.videoCount ?? initialVideoCount)));
-    setDateMode(editingReminder?.dateMode ?? "choose_date");
-    setDate(formatReminderDate(new Date(editingReminder?.timestamp ?? Date.now() + 60 * 60 * 1000)));
-    setRepeat(editingReminder?.repeat ?? "Never");
-    setReminderDate(new Date(editingReminder?.timestamp ?? Date.now() + 60 * 60 * 1000));
-  }, [editingReminder, initialVideoCount]);
-
-  const setToday = () => {
-    const next = new Date();
-    next.setHours(reminderDate.getHours(), reminderDate.getMinutes(), 0, 0);
-    if (next.getTime() <= Date.now()) next.setTime(Date.now() + 2 * 60 * 1000);
-    setDateMode("today");
-    setReminderDate(next);
-    setDate(formatReminderDate(next));
-  };
-
-  const changeDate = async () => {
-    try {
-      const pickedTimestamp = await FiniteNative.pickReminderDateTime(reminderDate.getTime());
-      if (pickedTimestamp == null) return;
-      const picked = new Date(pickedTimestamp);
-      setReminderDate(picked);
-      setDateMode(picked.toDateString() === new Date().toDateString() ? "today" : "choose_date");
-      setDate(formatReminderDate(picked));
-    } catch {
-      Alert.alert("Unable to choose a date", "Please try again while FINITE is open.");
-    }
-  };
-
-  const changeRepeat = () => {
-    Alert.alert("Repeat reminder", "How often should this reminder repeat?", [
-      { text: "Never", onPress: () => setRepeat("Never") },
-      { text: "Every day", onPress: () => setRepeat("Every day") },
-      { text: "Every week", onPress: () => setRepeat("Every week") },
-      { text: "Cancel", style: "cancel" },
-    ]);
-  };
 
   return (
     <LinearGradient
       colors={finiteGradientColors}
       locations={[0, 0.55, 1]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 0, y: 1 }}
-      style={styles.background}
-    >
+      start={{x: 0, y: 0}}
+      end={{x: 0, y: 1}}
+      style={styles.background}>
       <StatusBar barStyle="dark-content" />
-
-      <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
-        <ScrollView contentContainerStyle={styles.page}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
           <View style={styles.topBar}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Go back"
-              onPress={onBack}
-              style={styles.roundButton}
-            >
+            <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={onBack} style={styles.roundButton}>
               <Text style={styles.backArrow}>‹</Text>
             </Pressable>
-
-            <Text style={styles.topLabel}>WATCH LATER</Text>
-
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-              onPress={onClose}
-              style={styles.closeButton}
-            >
+            <Text style={styles.topLabel}>MINDFUL MILESTONE</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} style={styles.closeButton}>
               <Text style={styles.closeText}>×</Text>
             </Pressable>
           </View>
 
-          <Text style={styles.title}>{editingReminder ? "Edit reminder" : "Add reminder"}</Text>
-          <Text style={styles.description}>
-            A little nudge to make time for the videos you’ve saved.
-          </Text>
+          <View style={styles.intro}>
+            <View style={styles.spark}><Text style={styles.sparkText}>✦</Text></View>
+            <Text style={styles.title}>{editingReminder ? 'Edit your check-in' : 'Choose a check-in'}</Text>
+            <Text style={styles.description}>
+              FINITE will pause the feed when you reach this video and show exactly how many you’ve watched—and how many remain.
+            </Text>
+          </View>
 
-          <View style={styles.countCard}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Remove one video"
-              disabled={videoCount <= 1}
-              onPress={() => setVideoCount((count) => Math.max(1, count - 1))}
-              style={({ pressed }) => [
-                styles.stepButton,
-                videoCount <= 1 && styles.disabledButton,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text style={styles.stepText}>−</Text>
-            </Pressable>
+          <View style={styles.milestoneCard}>
+            <Text style={styles.cardEyebrow}>REMIND ME AFTER</Text>
+            <View style={styles.counterRow}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Decrease reminder milestone"
+                disabled={videoCount <= 1}
+                onPress={() => setVideoCount(value => Math.max(1, value - 1))}
+                style={({pressed}) => [styles.stepButton, videoCount <= 1 && styles.disabled, pressed && styles.pressed]}>
+                <Text style={styles.stepText}>−</Text>
+              </Pressable>
 
-            <View style={styles.countWrap}>
-              <Text style={styles.count}>{videoCount}</Text>
-              <Text style={styles.countCaption}>videos selected</Text>
+              <View style={styles.countWrap}>
+                <Text style={styles.count}>{videoCount}</Text>
+                <Text style={styles.countCaption}>{videoCount === 1 ? 'VIDEO' : 'VIDEOS'}</Text>
+              </View>
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Increase reminder milestone"
+                disabled={videoCount >= maximumReminder}
+                onPress={() => setVideoCount(value => Math.min(maximumReminder, value + 1))}
+                style={({pressed}) => [styles.stepButton, videoCount >= maximumReminder && styles.disabled, pressed && styles.pressed]}>
+                <Text style={styles.stepText}>+</Text>
+              </Pressable>
             </View>
 
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Add one video"
-              disabled={videoCount >= 100}
-              onPress={() => setVideoCount((count) => Math.min(100, count + 1))}
-              style={({ pressed }) => [
-                styles.stepButton,
-                videoCount >= 100 && styles.disabledButton,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text style={styles.stepText}>+</Text>
-            </Pressable>
+            <View style={styles.progressTrack}>
+              <LinearGradient
+                colors={['#648D95', '#72A697']}
+                start={{x: 0, y: 0}}
+                end={{x: 1, y: 0}}
+                style={[styles.progressFill, {width: progress}]}
+              />
+            </View>
+            <View style={styles.progressLabels}>
+              <Text style={styles.progressLabel}>0 watched</Text>
+              <Text style={styles.progressLabel}>{safeLimit} daily limit</Text>
+            </View>
+
+            <View style={styles.preview}>
+              <View style={styles.previewNumber}><Text style={styles.previewNumberText}>{videoCount}</Text></View>
+              <View style={styles.previewCopy}>
+                <Text style={styles.previewTitle}>Your popup will say</Text>
+                <Text style={styles.previewText}>
+                  “You’ve watched {videoCount}. {remaining} {remaining === 1 ? 'video is' : 'videos are'} left today.”
+                </Text>
+              </View>
+            </View>
           </View>
 
-          {savedReminders.length > 0 && <View style={styles.savedCard}>
-            <Text style={styles.savedHeading}>Saved reminders</Text>
-            {savedReminders.map(item => <View key={item.id} style={styles.savedRow}>
-              <Pressable accessibilityRole="button" onPress={() => onEdit?.(item.id)} style={styles.savedCopy}>
-                <Text style={styles.savedTitle}>{item.videoCount} videos · {new Date(item.timestamp).toLocaleString([], {weekday: "short", hour: "numeric", minute: "2-digit"})}</Text>
-                <Text style={styles.savedDetail}>{item.repeat === "Never" ? "One time" : item.repeat}</Text>
-              </Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel={`Delete ${item.videoCount} video reminder`} onPress={() => onDelete?.(item.id)} style={styles.savedDelete}>
-                <Text style={styles.savedDeleteText}>Delete</Text>
-              </Pressable>
-            </View>)}
-          </View>}
-
-          <Text style={styles.question}>When would you like a reminder?</Text>
-
-          <View style={styles.dateChoices}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ selected: dateMode === "today" }}
-              onPress={() => {
-                setToday();
-              }}
-              style={[
-                styles.dateChoice,
-                dateMode === "today" && styles.dateChoiceSelected,
-              ]}
-            >
-              <Text style={styles.dateChoiceText}>Today</Text>
-            </Pressable>
-
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ selected: dateMode === "choose_date" }}
-              onPress={() => setDateMode("choose_date")}
-              style={[
-                styles.dateChoice,
-                dateMode === "choose_date" && styles.dateChoiceSelected,
-              ]}
-            >
-              <Text style={styles.dateChoiceText}>Choose date</Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.optionsCard}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={changeDate}
-              style={styles.optionRow}
-            >
-              <View style={styles.optionLeft}>
-                <Text style={styles.optionIcon}>▦</Text>
-                <Text style={styles.optionLabel}>Date</Text>
-              </View>
-              <View style={styles.optionRight}>
-                <Text style={styles.optionValue}>{date}</Text>
-                <Text style={styles.chevron}>›</Text>
-              </View>
-            </Pressable>
-
-            <View style={styles.divider} />
-
-            <Pressable
-              accessibilityRole="button"
-              onPress={changeRepeat}
-              style={styles.optionRow}
-            >
-              <View style={styles.optionLeft}>
-                <Text style={styles.optionIcon}>⇄</Text>
-                <Text style={styles.optionLabel}>Repeat</Text>
-              </View>
-              <View style={styles.optionRight}>
-                <Text style={styles.optionValue}>{repeat}</Text>
-                <Text style={styles.chevron}>›</Text>
-              </View>
-            </Pressable>
-          </View>
+          {sortedReminders.length > 0 && (
+            <View style={styles.savedCard}>
+              <Text style={styles.savedHeading}>YOUR CHECK-INS</Text>
+              {sortedReminders.map(item => (
+                <View key={item.id} style={styles.savedRow}>
+                  <Pressable accessibilityRole="button" onPress={() => onEdit?.(item.id)} style={styles.savedCopy}>
+                    <View style={styles.savedBadge}><Text style={styles.savedBadgeText}>{item.videoCount}</Text></View>
+                    <View>
+                      <Text style={styles.savedTitle}>After video {item.videoCount}</Text>
+                      <Text style={styles.savedDetail}>Once a day · tap to edit</Text>
+                    </View>
+                  </Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel={`Delete reminder at video ${item.videoCount}`} onPress={() => onDelete?.(item.id)} style={styles.savedDelete}>
+                    <Text style={styles.savedDeleteText}>×</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          )}
 
           <View style={styles.bottom}>
             <Pressable
               accessibilityRole="button"
-              onPress={() => {
-                if (reminderDate.getTime() <= Date.now()) {
-                  Alert.alert("Choose a future time", "This reminder time has already passed. Pick a later date or time.");
-                  return;
-                }
-                onSave?.({ id: editingReminder?.id, videoCount, dateMode, date, repeat, timestamp: reminderDate.getTime() });
-              }}
-              style={({ pressed }) => [
-                styles.saveButton,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text style={styles.bell}>♧</Text>
-              <Text style={styles.saveText}>Save reminder</Text>
+              disabled={safeLimit <= 1}
+              onPress={() => onSave?.({id: editingReminder?.id, videoCount})}
+              style={({pressed}) => [styles.saveButton, safeLimit <= 1 && styles.disabled, pressed && styles.pressed]}>
+              <Text style={styles.saveText}>{editingReminder ? 'Update check-in' : 'Set check-in at ' + videoCount}</Text>
+              <Text style={styles.saveArrow}>→</Text>
             </Pressable>
-
             <Text style={styles.footerText}>
-              We’ll remind you at the scheduled date and time.
+              Appears once per day while you scroll. No notification permission needed.
             </Text>
-            {editingReminder && onAddNew && <Pressable accessibilityRole="button" onPress={onAddNew} style={styles.addNewButton}>
-              <Text style={styles.addNewText}>Add new reminder</Text>
-            </Pressable>}
-            {editingReminder && onDelete && <Pressable accessibilityRole="button" onPress={() => onDelete(editingReminder.id)} style={styles.deleteButton}>
-              <Text style={styles.deleteText}>Delete this reminder</Text>
-            </Pressable>}
+            {editingReminder && onAddNew && (
+              <Pressable accessibilityRole="button" onPress={onAddNew} style={styles.textAction}>
+                <Text style={styles.textActionLabel}>Add another check-in</Text>
+              </Pressable>
+            )}
+            {editingReminder && onDelete && (
+              <Pressable accessibilityRole="button" onPress={() => onDelete(editingReminder.id)} style={styles.textAction}>
+                <Text style={styles.deleteLabel}>Delete this check-in</Text>
+              </Pressable>
+            )}
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -292,218 +184,56 @@ export default function AddReminder({
 }
 
 const styles = StyleSheet.create({
-  background: {
-    flex: 1,
-  },
-  savedCard: { backgroundColor: "rgba(255,255,255,0.46)", borderRadius: 16, padding: 12, marginBottom: 15 },
-  savedHeading: { color: finiteColors.text, fontSize: 12, fontWeight: "800", letterSpacing: 0.6, marginBottom: 5 },
-  savedRow: { flexDirection: "row", alignItems: "center", borderTopWidth: 1, borderTopColor: "rgba(35,39,43,0.10)", paddingVertical: 8 },
-  savedCopy: { flex: 1 },
-  savedTitle: { color: finiteColors.text, fontSize: 13, fontWeight: "700" },
-  savedDetail: { color: finiteColors.secondaryText, fontSize: 11, marginTop: 2 },
-  savedDelete: { paddingHorizontal: 5, paddingVertical: 6 },
-  savedDeleteText: { color: "#B54B43", fontSize: 11, fontWeight: "700" },
-  safeArea: {
-    flex: 1,
-  },
-  page: {
-    flexGrow: 1,
-    width: "100%",
-    maxWidth: 430,
-    alignSelf: "center",
-    paddingHorizontal: 15,
-    paddingTop: 10,
-    paddingBottom: 10,
-  },
-  topBar: {
-    minHeight: 32,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  roundButton: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: "rgba(255,255,255,0.55)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  backArrow: {
-    color: finiteColors.text,
-    fontSize: 20,
-    lineHeight: 22,
-  },
-  topLabel: {
-    color: finiteColors.secondaryText,
-    fontSize: 7,
-    letterSpacing: 0.2,
-  },
-  closeButton: {
-    width: 22,
-    height: 22,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  closeText: {
-    color: finiteColors.text,
-    fontSize: 17,
-  },
-  title: {
-    color: finiteColors.text,
-    fontSize: 17,
-    fontWeight: "600",
-    marginTop: 10,
-  },
-  description: {
-    color: finiteColors.secondaryText,
-    fontSize: 9,
-    lineHeight: 13,
-    marginTop: 5,
-    maxWidth: 260,
-  },
-  countCard: {
-    minHeight: 68,
-    backgroundColor: "rgba(255,255,255,0.84)",
-    borderRadius: 14,
-    paddingHorizontal: 11,
-    marginTop: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  stepButton: {
-    width: 24,
-    height: 24,
-    borderRadius: 9,
-    backgroundColor: "#DDEFEA",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stepText: {
-    color: "#73A49C",
-    fontSize: 16,
-    lineHeight: 19,
-  },
-  disabledButton: {
-    opacity: 0.45,
-  },
-  countWrap: {
-    alignItems: "center",
-  },
-  count: {
-    color: finiteColors.text,
-    fontSize: 30,
-    lineHeight: 32,
-    fontWeight: "500",
-  },
-  countCaption: {
-    color: finiteColors.secondaryText,
-    fontSize: 8,
-    marginTop: 1,
-  },
-  question: {
-    color: finiteColors.text,
-    fontSize: 8,
-    fontWeight: "600",
-    marginTop: 13,
-    marginBottom: 6,
-  },
-  dateChoices: {
-    flexDirection: "row",
-    gap: 5,
-    marginBottom: 7,
-  },
-  dateChoice: {
-    flex: 1,
-    minHeight: 23,
-    borderRadius: 99,
-    backgroundColor: "rgba(255,255,255,0.55)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  dateChoiceSelected: {
-    backgroundColor: "rgba(255,255,255,0.82)",
-  },
-  dateChoiceText: {
-    color: finiteColors.secondaryText,
-    fontSize: 7,
-  },
-  optionsCard: {
-    backgroundColor: "rgba(255,255,255,0.82)",
-    borderRadius: 13,
-    paddingHorizontal: 10,
-  },
-  optionRow: {
-    minHeight: 29,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  optionLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  optionRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-  },
-  optionIcon: {
-    color: finiteColors.primary,
-    fontSize: 11,
-    width: 13,
-  },
-  optionLabel: {
-    color: finiteColors.text,
-    fontSize: 8,
-  },
-  optionValue: {
-    color: finiteColors.text,
-    fontSize: 8,
-  },
-  chevron: {
-    color: finiteColors.secondaryText,
-    fontSize: 14,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: finiteColors.divider,
-  },
-  bottom: {
-    marginTop: "auto",
-    paddingTop: 20,
-  },
-  saveButton: {
-    minHeight: 30,
-    borderRadius: 9,
-    backgroundColor: finiteColors.primary,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-  },
-  bell: {
-    color: "#FFFFFF",
-    fontSize: 10,
-  },
-  saveText: {
-    color: "#FFFFFF",
-    fontSize: 8,
-    fontWeight: "500",
-  },
-  footerText: {
-    color: finiteColors.secondaryText,
-    fontSize: 6,
-    textAlign: "center",
-    marginTop: 7,
-  },
-  pressed: {
-    opacity: 0.78,
-  },
-  deleteButton: { alignItems: "center", paddingTop: 14 },
-  deleteText: { color: finiteColors.secondaryText, fontSize: 12, textDecorationLine: "underline" },
-  addNewButton: { alignItems: "center", paddingTop: 12 },
-  addNewText: { color: finiteColors.primary, fontSize: 11, fontWeight: "700" },
+  background: {flex: 1},
+  safeArea: {flex: 1},
+  page: {flexGrow: 1, width: '100%', maxWidth: 430, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 22},
+  topBar: {height: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
+  roundButton: {width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.55)', alignItems: 'center', justifyContent: 'center'},
+  backArrow: {color: finiteColors.text, fontSize: 27, lineHeight: 29},
+  topLabel: {color: finiteColors.secondaryText, fontSize: 10, fontWeight: '700', letterSpacing: 1.5},
+  closeButton: {width: 34, height: 34, alignItems: 'center', justifyContent: 'center'},
+  closeText: {color: finiteColors.text, fontSize: 24, fontWeight: '300'},
+  intro: {alignItems: 'center', paddingTop: 20, paddingBottom: 18},
+  spark: {width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.58)', alignItems: 'center', justifyContent: 'center', marginBottom: 12},
+  sparkText: {color: '#9B7D48', fontSize: 19},
+  title: {color: finiteColors.text, fontSize: 26, fontWeight: '700', letterSpacing: -0.5},
+  description: {color: finiteColors.secondaryText, fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: 8, maxWidth: 340},
+  milestoneCard: {backgroundColor: 'rgba(255,255,255,0.88)', borderRadius: 26, padding: 22, shadowColor: '#173743', shadowOpacity: 0.12, shadowRadius: 22, shadowOffset: {width: 0, height: 10}, elevation: 8},
+  cardEyebrow: {color: finiteColors.secondaryText, fontSize: 10, fontWeight: '800', letterSpacing: 1.6, textAlign: 'center'},
+  counterRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: 14},
+  stepButton: {width: 48, height: 48, borderRadius: 18, backgroundColor: '#E2EFEC', borderWidth: 1, borderColor: '#C9DEDA', alignItems: 'center', justifyContent: 'center'},
+  stepText: {color: '#4E7A78', fontSize: 25, fontWeight: '400', lineHeight: 27},
+  countWrap: {alignItems: 'center'},
+  count: {color: finiteColors.text, fontSize: 56, lineHeight: 60, fontWeight: '700', letterSpacing: -2},
+  countCaption: {color: finiteColors.secondaryText, fontSize: 9, fontWeight: '800', letterSpacing: 1.8},
+  progressTrack: {height: 9, borderRadius: 99, backgroundColor: '#DFE9E7', overflow: 'hidden', marginTop: 5},
+  progressFill: {height: '100%', borderRadius: 99},
+  progressLabels: {flexDirection: 'row', justifyContent: 'space-between', marginTop: 7},
+  progressLabel: {color: '#718487', fontSize: 10},
+  preview: {flexDirection: 'row', alignItems: 'center', backgroundColor: '#EDF5F2', borderRadius: 18, padding: 13, marginTop: 19},
+  previewNumber: {width: 38, height: 38, borderRadius: 19, backgroundColor: '#D5E8E3', alignItems: 'center', justifyContent: 'center', marginRight: 11},
+  previewNumberText: {color: '#466F70', fontSize: 17, fontWeight: '800'},
+  previewCopy: {flex: 1},
+  previewTitle: {color: finiteColors.text, fontSize: 11, fontWeight: '800', marginBottom: 3},
+  previewText: {color: finiteColors.secondaryText, fontSize: 12, lineHeight: 17},
+  savedCard: {backgroundColor: 'rgba(255,255,255,0.54)', borderRadius: 20, padding: 15, marginTop: 16},
+  savedHeading: {color: finiteColors.secondaryText, fontSize: 9, fontWeight: '800', letterSpacing: 1.4, marginBottom: 6},
+  savedRow: {minHeight: 56, flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: 'rgba(42,72,79,0.10)'},
+  savedCopy: {flex: 1, flexDirection: 'row', alignItems: 'center'},
+  savedBadge: {width: 34, height: 34, borderRadius: 12, backgroundColor: '#DDECE8', alignItems: 'center', justifyContent: 'center', marginRight: 10},
+  savedBadgeText: {color: '#466F70', fontSize: 14, fontWeight: '800'},
+  savedTitle: {color: finiteColors.text, fontSize: 13, fontWeight: '700'},
+  savedDetail: {color: finiteColors.secondaryText, fontSize: 10, marginTop: 2},
+  savedDelete: {width: 34, height: 34, alignItems: 'center', justifyContent: 'center'},
+  savedDeleteText: {color: '#8E6260', fontSize: 22, fontWeight: '300'},
+  bottom: {marginTop: 'auto', paddingTop: 20},
+  saveButton: {minHeight: 54, borderRadius: 17, backgroundColor: finiteColors.primary, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', shadowColor: '#274854', shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: {width: 0, height: 7}, elevation: 4},
+  saveText: {color: '#FFFFFF', fontSize: 15, fontWeight: '700'},
+  saveArrow: {color: '#FFFFFF', fontSize: 19, marginLeft: 10},
+  footerText: {color: finiteColors.secondaryText, fontSize: 10, lineHeight: 15, textAlign: 'center', marginTop: 10},
+  textAction: {alignItems: 'center', paddingTop: 13},
+  textActionLabel: {color: finiteColors.primary, fontSize: 12, fontWeight: '700'},
+  deleteLabel: {color: '#8E6260', fontSize: 12, textDecorationLine: 'underline'},
+  disabled: {opacity: 0.42},
+  pressed: {opacity: 0.76, transform: [{scale: 0.985}]},
 });

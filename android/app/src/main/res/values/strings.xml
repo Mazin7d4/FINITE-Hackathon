@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">FINITE</string>
-    <string name="accessibility_service_description">Counts Instagram Reels and YouTube Shorts during an active FINITE session and shows your on-device limit reminder. Counting is best effort.</string>
+    <string name="accessibility_service_description">Counts Instagram Reels and YouTube Shorts during an active FINITE session and shows your on-device check-ins and daily limit. Counting is best effort.</string>
 </resources>
 

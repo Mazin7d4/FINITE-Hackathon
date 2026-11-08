@@ -1,116 +1,150 @@
 package app.finite.notifications
 
+import android.content.Context
 import android.app.AlarmManager
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
-import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
-import app.finite.MainActivity
-import java.util.Calendar
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
-/** Independent local reminders. Calendar arithmetic preserves local wall-clock time across DST. */
-class ReminderScheduler(private val context: Context) {
+data class DueVideoReminder(val id: String, val videoCount: Int)
+
+/** Persists counter milestones and atomically claims each one at most once per local day. */
+class ReminderScheduler(
+    context: Context,
+    private val clock: () -> Date = { Date() },
+) {
     private val appContext = context.applicationContext
-    private val prefs = appContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+    private val prefs = appContext
+        .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
-    fun schedule(id: String, atMillis: Long, videoCount: Int, repeat: String) {
-        cancelAlarm(id)
-        prefs.edit().putStringSet(KEY_IDS, ids() + id)
-            .putLong(key(id, KEY_AT), atMillis).putInt(key(id, KEY_COUNT), videoCount)
-            .putString(key(id, KEY_REPEAT), repeat).apply()
-        arm(id, atMillis)
+    init { migrateLegacyAlarms() }
+
+    @Synchronized
+    fun schedule(id: String, videoCount: Int) {
+        prefs.edit()
+            .putStringSet(KEY_IDS, ids() + id)
+            .putInt(key(id, KEY_COUNT), videoCount.coerceIn(MIN_COUNT, MAX_COUNT))
+            .apply()
     }
 
+    @Synchronized
     fun cancel(id: String) {
-        cancelAlarm(id)
-        prefs.edit().putStringSet(KEY_IDS, ids() - id)
-            .remove(key(id, KEY_AT)).remove(key(id, KEY_COUNT)).remove(key(id, KEY_REPEAT)).apply()
+        prefs.edit()
+            .putStringSet(KEY_IDS, ids() - id)
+            .remove(key(id, KEY_COUNT))
+            .remove(key(id, KEY_LAST_SHOWN_DATE))
+            .apply()
     }
 
+    @Synchronized
     fun cancelAll() {
         ids().toList().forEach(::cancel)
     }
 
-    fun reschedule() {
-        ids().toList().forEach { id ->
-            val next = futureOccurrence(id, System.currentTimeMillis())
-            if (next == null) cancel(id)
-            else { prefs.edit().putLong(key(id, KEY_AT), next).apply(); arm(id, next) }
+    /** Makes native state match the active JS profile without touching acknowledgements for retained IDs. */
+    @Synchronized
+    fun reconcile(reminders: Map<String, Int>) {
+        val current = ids()
+        val next = reminders.keys
+        val editor = prefs.edit().putStringSet(KEY_IDS, next)
+        (current - next).forEach { id ->
+            editor.remove(key(id, KEY_COUNT)).remove(key(id, KEY_LAST_SHOWN_DATE))
         }
+        reminders.forEach { (id, count) -> editor.putInt(key(id, KEY_COUNT), count.coerceIn(MIN_COUNT, MAX_COUNT)) }
+        editor.commit()
     }
 
-    private fun futureOccurrence(id: String, now: Long): Long? {
-        val at = prefs.getLong(key(id, KEY_AT), 0L)
-        val repeat = prefs.getString(key(id, KEY_REPEAT), NEVER).orEmpty()
-        if (repeat == NEVER) return at.takeIf { it > now }
-        val calendar = Calendar.getInstance().apply { timeInMillis = at }
-        while (calendar.timeInMillis <= now) {
-            if (repeat == WEEKLY) calendar.add(Calendar.WEEK_OF_YEAR, 1)
-            else calendar.add(Calendar.DAY_OF_YEAR, 1)
-        }
-        return calendar.timeInMillis
+    /** Returns and marks the first crossed milestone. The hard daily limit always wins. */
+    @Synchronized
+    fun claimDueReminder(currentCount: Int, dailyLimit: Int): DueVideoReminder? {
+        val today = dateKey(clock())
+        val due = ids()
+            .map { id -> DueVideoReminder(id, prefs.getInt(key(id, KEY_COUNT), MIN_COUNT)) }
+            .filter { reminder ->
+                ReminderThresholdPolicy.shouldShow(
+                    threshold = reminder.videoCount,
+                    currentCount = currentCount,
+                    dailyLimit = dailyLimit,
+                    lastShownDate = prefs.getString(key(reminder.id, KEY_LAST_SHOWN_DATE), null),
+                    today = today,
+                )
+            }
+            .minByOrNull(DueVideoReminder::videoCount)
+            ?: return null
+
+        prefs.edit().putString(key(due.id, KEY_LAST_SHOWN_DATE), today).apply()
+        return due
     }
 
-    private fun arm(id: String, atMillis: Long) {
-        val alarm = appContext.getSystemService(AlarmManager::class.java)
-        val trigger = atMillis.coerceAtLeast(System.currentTimeMillis() + 1_000L)
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pendingIntent(id))
-            else alarm.setExact(AlarmManager.RTC_WAKEUP, trigger, pendingIntent(id))
-        } catch (_: SecurityException) { alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pendingIntent(id)) }
-    }
-
-    private fun cancelAlarm(id: String) = appContext.getSystemService(AlarmManager::class.java).cancel(pendingIntent(id))
-    private fun pendingIntent(id: String): PendingIntent = PendingIntent.getBroadcast(
-        appContext, REQUEST_CODE_BASE + (id.hashCode() and 0x7fff),
-        Intent(appContext, ReminderReceiver::class.java).setData(Uri.parse("finite://reminder/$id")).putExtra(EXTRA_ID, id),
-        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
     private fun ids(): Set<String> = prefs.getStringSet(KEY_IDS, emptySet()).orEmpty()
     private fun key(id: String, suffix: String) = "reminder_${id}_$suffix"
+    private fun dateKey(date: Date): String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(date)
 
-    companion object {
-        const val DAILY = "Every day"
-        const val WEEKLY = "Every week"
-        const val NEVER = "Never"
-        const val EXTRA_ID = "finite_reminder_id"
-        private const val PREFERENCES = "finite_reminder"
-        private const val KEY_IDS = "ids"
-        private const val KEY_AT = "at"
-        private const val KEY_COUNT = "count"
-        private const val KEY_REPEAT = "repeat"
-        private const val REQUEST_CODE_BASE = 739
-        private const val CHANNEL_ID = "finite_reminders"
-        fun show(context: Context, id: String, count: Int) {
-            val manager = context.getSystemService(NotificationManager::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "FINITE reminders", NotificationManager.IMPORTANCE_DEFAULT))
-            if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
-            val intent = PendingIntent.getActivity(context, 740, Intent(context, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-            NotificationManagerCompat.from(context).notify(740 + (id.hashCode() and 0x7fff), NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(app.finite.R.drawable.ic_finite).setContentTitle("FINITE reminder")
-                .setContentText("You saved $count short videos for later.").setContentIntent(intent).setAutoCancel(true).build())
+    /** PR21 used the legacy alarm preference file. Copy only milestone-shaped entries; discard timestamp alarms. */
+    private fun migrateLegacyAlarms() {
+        val legacy = appContext.getSharedPreferences(LEGACY_PREFERENCES, Context.MODE_PRIVATE)
+        val legacyIds = legacy.getStringSet(KEY_IDS, emptySet()).orEmpty()
+        if (legacyIds.isEmpty()) return
+        val editor = prefs.edit()
+        val migrated = ids().toMutableSet()
+        legacyIds.forEach { id ->
+            val hasAlarmFields = legacy.contains(key(id, KEY_AT)) || legacy.contains(key(id, KEY_REPEAT))
+            if (!hasAlarmFields && legacy.contains(key(id, KEY_COUNT))) {
+                migrated += id
+                editor.putInt(key(id, KEY_COUNT), legacy.getInt(key(id, KEY_COUNT), MIN_COUNT))
+                legacy.getString(key(id, KEY_LAST_SHOWN_DATE), null)?.let { editor.putString(key(id, KEY_LAST_SHOWN_DATE), it) }
+            }
+            cancelLegacyAlarm(id)
+            editor.remove(key(id, KEY_AT)).remove(key(id, KEY_REPEAT))
+        }
+        editor.putStringSet(KEY_IDS, migrated).commit()
+        legacy.edit().clear().apply()
+    }
+
+    private fun cancelLegacyAlarm(id: String) {
+        val alarm = appContext.getSystemService(AlarmManager::class.java)
+        val pendingIntent = PendingIntent.getBroadcast(appContext, REQUEST_CODE_BASE + (id.hashCode() and 0x7fff),
+            Intent(appContext, ReminderReceiver::class.java).setData(Uri.parse("finite://reminder/$id")),
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE)
+        if (pendingIntent != null) {
+            alarm.cancel(pendingIntent)
+            pendingIntent.cancel()
         }
     }
-}
 
-class ReminderReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent?) {
-        val id = intent?.getStringExtra(ReminderScheduler.EXTRA_ID) ?: return
-        val prefs = context.getSharedPreferences("finite_reminder", Context.MODE_PRIVATE)
-        ReminderScheduler.show(context, id, prefs.getInt("reminder_${id}_count", 1))
-        ReminderScheduler(context).reschedule()
+    companion object {
+        private const val PREFERENCES = "finite_milestone_reminder"
+        private const val LEGACY_PREFERENCES = "finite_reminder"
+        private const val KEY_IDS = "ids"
+        private const val KEY_COUNT = "count"
+        private const val KEY_LAST_SHOWN_DATE = "last_shown_date"
+        private const val MIN_COUNT = 1
+        private const val MAX_COUNT = 100
+        private const val KEY_AT = "at"
+        private const val KEY_REPEAT = "repeat"
+        private const val REQUEST_CODE_BASE = 739
     }
 }
 
-class ReminderBootReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent?) {
-        if (intent?.action == Intent.ACTION_BOOT_COMPLETED || intent?.action == Intent.ACTION_MY_PACKAGE_REPLACED) ReminderScheduler(context).reschedule()
-    }
+/** Kept only so Android can identify and cancel pre-0.1.7 alarm PendingIntents during migration. */
+@Deprecated("Legacy alarm cancellation target")
+private class ReminderReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context?, intent: Intent?) = Unit
+}
+
+internal object ReminderThresholdPolicy {
+    fun shouldShow(
+        threshold: Int,
+        currentCount: Int,
+        dailyLimit: Int,
+        lastShownDate: String?,
+        today: String,
+    ): Boolean = threshold in 1 until dailyLimit &&
+        currentCount >= threshold &&
+        currentCount < dailyLimit &&
+        lastShownDate != today
 }
