@@ -5,13 +5,11 @@
 - Kept legacy timestamp/repeat alarms separate from video-count milestones during upgrade.
 - Reconciled native reminders on profile restore while preserving once-per-day acknowledgements.
 - Added rollback when reminder persistence fails, including edits and deletes.
-- Android versionCode 13, versionName 0.1.7.
-
-## Unreleased
-
 - Changed reminders from scheduled notifications into once-daily video-count check-ins.
 - Added watched and remaining counts to reminder popups.
 - Redesigned the reminder and hard-limit overlays with premium cards, progress details, and entrance/exit motion.
+- Fixed the next Short playing after Continue with intention.
+- Android versionCode 13, versionName 0.1.7.
 
 ## [0.1.6] — 2026-11-07
 
