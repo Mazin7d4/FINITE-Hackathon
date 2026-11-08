@@ -332,6 +332,7 @@ class FiniteAccessibilityService : AccessibilityService() {
             }, matchWrap(top = 0, bottom = 0))
         } else {
             panel.addView(overlayButton("Continue with intention", primary = true) {
+                shortsCounter.suspend()
                 dismissOverlayAnimated()
             }, matchWrap(top = 0, bottom = 10))
             panel.addView(overlayButton("End my session", primary = false) {

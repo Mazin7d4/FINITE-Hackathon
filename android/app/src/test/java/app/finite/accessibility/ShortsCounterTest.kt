@@ -205,4 +205,24 @@ class ShortsCounterTest {
         assertNull(counter.update(viewer(scroll = ShortsScroll(2_184, "reel_player_underlay", 0,
             -887, 0, relativeOffset = true)), 2_184).incrementReason)
     }
+
+    @Test fun overlayPauseAfterQuietFallbackResumesCurrentViewerWithoutDuplicateAndCountsNextSwipe() {
+        val counter = ShortsCounter()
+        counter.update(viewer(), 0)
+
+        counter.update(viewer(scroll = ShortsScroll(1_000, "reel_player_underlay", 887, 887, 0,
+            relativeOffset = true)), 1_000)
+        assertNotNull(counter.update(viewer(), 2_000).incrementReason)
+
+        // Continue with intention pauses only transient gesture state; the entered viewer remains latched.
+        counter.suspend()
+        assertNull(counter.update(viewer(), 2_100).incrementReason)
+
+        val nextSwipeStart = ShortsScroll(2_184, "reel_player_underlay", 887, 887, 0,
+            relativeOffset = true)
+        counter.update(viewer(scroll = nextSwipeStart), 2_184)
+        assertNull(counter.update(viewer(), 2_584).incrementReason)
+        assertNotNull(counter.update(viewer(), 3_184).incrementReason)
+        assertNull(counter.update(viewer(), 3_300).incrementReason)
+    }
 }
