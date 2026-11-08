@@ -1,6 +1,9 @@
 {
   "expo": {
     "name": "FINITE",
-    "slug": "finite"
+    "slug": "finite",
+    "android": {
+      "backgroundColor": "#BADBCC"
+    }
   }
 }

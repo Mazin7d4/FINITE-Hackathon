@@ -11,7 +11,12 @@ import {
   Text,
   TextInput,
   View,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import {LinearGradient} from 'expo-linear-gradient';
+import {SafeAreaView} from 'react-native-safe-area-context';
+import {finiteColors, finiteGradientColors} from './theme';
 
 type SessionState = {
   limit: number;
@@ -42,7 +47,7 @@ const initialState: SessionState = {
   accessibilityEnabled: false,
 };
 
-function FiniteApp({initialLimit}: {initialLimit?: number}): React.JSX.Element {
+function FiniteApp({initialLimit, onBack}: {initialLimit?: number; onBack?: () => void}): React.JSX.Element {
   const [session, setSession] = useState(initialState);
   const [limitText, setLimitText] = useState(String(initialLimit ?? 5));
   const limit = Number(limitText);
@@ -52,7 +57,7 @@ function FiniteApp({initialLimit}: {initialLimit?: number}): React.JSX.Element {
     try {
       const next = await FiniteNative.getState();
       setSession(next);
-      if (!next.active) setLimitText(String(next.limit));
+      if (!next.active && initialLimit === undefined) setLimitText(String(next.limit));
     } catch (error) {
       console.warn('Unable to read FINITE state', error);
     }
@@ -123,13 +128,25 @@ function FiniteApp({initialLimit}: {initialLimit?: number}): React.JSX.Element {
   };
 
   return (
-    <View style={styles.safeArea}>
-      <StatusBar barStyle="light-content" />
-      <View style={styles.glow} />
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled">
+    <LinearGradient
+      colors={finiteGradientColors}
+      locations={[0, 0.55, 1]}
+      start={{x: 0, y: 0}}
+      end={{x: 0, y: 1}}
+      style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" />
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+      <KeyboardAvoidingView style={styles.safeArea} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.brandRow}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Back to usage review"
+            onPress={onBack}
+            hitSlop={10}
+            style={styles.backButton}>
+            <Text style={styles.backArrow}>‹</Text>
+          </Pressable>
           <View style={styles.logo}><Text style={styles.logoText}>F</Text></View>
           <Text style={styles.brand}>FINITE</Text>
         </View>
@@ -139,7 +156,7 @@ function FiniteApp({initialLimit}: {initialLimit?: number}): React.JSX.Element {
         </Text>
         <Text style={styles.intro}>
           {session.active
-            ? 'Reels and Shorts share one counter. Switch between Instagram and YouTube anytime.'
+            ? 'FINITE is watching for distinct Reels and Shorts transitions on this device.'
             : 'Choose your combined Reels and Shorts limit. We’ll remind you when you arrive.'}
         </Text>
 
@@ -170,7 +187,7 @@ function FiniteApp({initialLimit}: {initialLimit?: number}): React.JSX.Element {
                 selectTextOnFocus
                 style={styles.input}
                 placeholder="5"
-                placeholderTextColor="#606268"
+                placeholderTextColor={finiteColors.secondaryText}
               />
               <Text style={styles.inputSuffix}>Videos</Text>
             </View>
@@ -217,60 +234,63 @@ function FiniteApp({initialLimit}: {initialLimit?: number}): React.JSX.Element {
         <Text style={styles.statusLabel}>DETECTOR STATUS</Text>
         <Text style={styles.detectorStatus}>{session.detectorStatus}</Text>
         <Text style={styles.privacyCopy}>
-          Reels and Shorts counting is best-effort and may miss or repeat a count.
-          FINITE processes accessibility metadata on-device and stores no browsing content.
+          Counting is best-effort because apps expose no official per-Reel or
+          per-Short API. FINITE processes accessibility metadata on-device and
+          stores no browsing content.
         </Text>
       </ScrollView>
-    </View>
+      </KeyboardAvoidingView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
-export default function FiniteScreen({initialLimit}: {initialLimit?: number}): React.JSX.Element {
-  return <FiniteApp initialLimit={initialLimit} />;
+export default function FiniteScreen({initialLimit, onBack}: {initialLimit?: number; onBack?: () => void}): React.JSX.Element {
+  return <FiniteApp initialLimit={initialLimit} onBack={onBack} />;
 }
 
 const styles = StyleSheet.create({
-  safeArea: {flex: 1, backgroundColor: '#090A0B'},
-  glow: {position: 'absolute', top: -180, right: -180, width: 420, height: 420,
-    borderRadius: 210, backgroundColor: '#16200A', opacity: 0.52},
+  safeArea: {flex: 1},
   content: {paddingHorizontal: 22, paddingTop: 52, paddingBottom: 36},
   brandRow: {flexDirection: 'row', alignItems: 'center', marginBottom: 42},
+  backButton: {width: 28, height: 38, justifyContent: 'center', marginRight: 2},
+  backArrow: {color: finiteColors.text, fontSize: 28, lineHeight: 32},
   logo: {width: 38, height: 38, borderRadius: 19, alignItems: 'center',
-    justifyContent: 'center', backgroundColor: '#D9FF57'},
-  logoText: {color: '#090A0B', fontSize: 24, fontWeight: '900'},
-  brand: {marginLeft: 12, color: '#FFFFFF', fontSize: 19, fontWeight: '900', letterSpacing: 3.4},
-  hero: {color: '#FFFFFF', fontSize: 34, lineHeight: 39, fontWeight: '700', letterSpacing: -0.8},
-  intro: {marginTop: 10, marginBottom: 30, color: '#A5A6A9', fontSize: 16, lineHeight: 23},
-  card: {padding: 22, borderRadius: 24, borderWidth: 1, borderColor: '#34363A',
-    backgroundColor: '#141517', alignItems: 'center'},
-  eyebrow: {alignSelf: 'flex-start', color: '#D9FF57', fontSize: 12,
+    justifyContent: 'center', backgroundColor: finiteColors.primary},
+  logoText: {color: finiteColors.surface, fontSize: 24, fontWeight: '900'},
+  brand: {marginLeft: 12, color: finiteColors.text, fontSize: 19, fontWeight: '900', letterSpacing: 3.4},
+  hero: {color: finiteColors.text, fontSize: 34, lineHeight: 39, fontWeight: '700', letterSpacing: -0.8},
+  intro: {marginTop: 10, marginBottom: 30, color: finiteColors.secondaryText, fontSize: 16, lineHeight: 23},
+  card: {padding: 22, borderRadius: 24, borderWidth: 1, borderColor: finiteColors.divider,
+    backgroundColor: finiteColors.surface, alignItems: 'center'},
+  eyebrow: {alignSelf: 'flex-start', color: finiteColors.primary, fontSize: 12,
     fontWeight: '800', letterSpacing: 1.5},
-  counter: {marginTop: 12, color: '#FFFFFF', fontSize: 64, fontWeight: '800', letterSpacing: -2},
-  caption: {marginTop: 5, color: '#A5A6A9', fontSize: 14},
+  counter: {marginTop: 12, color: finiteColors.text, fontSize: 64, fontWeight: '800', letterSpacing: -2},
+  caption: {marginTop: 5, color: finiteColors.secondaryText, fontSize: 14},
   inputRow: {width: '100%', height: 66, marginTop: 12, paddingHorizontal: 16,
     flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderWidth: 1,
-    borderColor: '#484A50', backgroundColor: '#1B1C1F'},
-  input: {flex: 1, color: '#FFFFFF', fontSize: 30, fontWeight: '800'},
-  inputSuffix: {color: '#A5A6A9', fontSize: 16},
-  error: {alignSelf: 'flex-start', marginTop: 7, color: '#FF8A80'},
+    borderColor: finiteColors.divider, backgroundColor: finiteColors.progressTrack},
+  input: {flex: 1, color: finiteColors.text, fontSize: 30, fontWeight: '800'},
+  inputSuffix: {color: finiteColors.secondaryText, fontSize: 16},
+  error: {alignSelf: 'flex-start', marginTop: 7, color: '#B54747'},
   primaryButton: {width: '100%', height: 56, marginTop: 18, borderRadius: 16,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: '#D9FF57'},
-  primaryButtonText: {color: '#090A0B', fontSize: 16, fontWeight: '800'},
-  disabledButton: {backgroundColor: '#34363A'},
+    alignItems: 'center', justifyContent: 'center', backgroundColor: finiteColors.primary},
+  primaryButtonText: {color: finiteColors.surface, fontSize: 16, fontWeight: '800'},
+  disabledButton: {backgroundColor: finiteColors.secondaryText},
   pressed: {opacity: 0.78},
   endButton: {width: '100%', marginTop: 20, paddingVertical: 14, alignItems: 'center'},
-  endButtonText: {color: '#FF8A80', fontSize: 15, fontWeight: '800'},
+  endButtonText: {color: finiteColors.primary, fontSize: 15, fontWeight: '800'},
   permissionCard: {marginTop: 18, padding: 18, borderRadius: 20, flexDirection: 'row',
-    alignItems: 'center', backgroundColor: '#1B1C1F'},
+    alignItems: 'center', backgroundColor: finiteColors.surface},
   statusDot: {width: 10, height: 10, borderRadius: 5, marginRight: 14},
-  readyDot: {backgroundColor: '#D9FF57'},
-  warningDot: {backgroundColor: '#FF8A80'},
+  readyDot: {backgroundColor: finiteColors.primary},
+  warningDot: {backgroundColor: '#C47A53'},
   permissionCopy: {flex: 1},
-  permissionTitle: {color: '#FFFFFF', fontSize: 15, fontWeight: '700'},
-  permissionSubtitle: {marginTop: 3, color: '#A5A6A9', fontSize: 12},
-  settingsLink: {color: '#D9FF57', fontSize: 14, fontWeight: '800'},
-  statusLabel: {marginTop: 22, color: '#A5A6A9', fontSize: 11,
+  permissionTitle: {color: finiteColors.text, fontSize: 15, fontWeight: '700'},
+  permissionSubtitle: {marginTop: 3, color: finiteColors.secondaryText, fontSize: 12},
+  settingsLink: {color: finiteColors.primary, fontSize: 14, fontWeight: '800'},
+  statusLabel: {marginTop: 22, color: finiteColors.secondaryText, fontSize: 11,
     fontWeight: '800', letterSpacing: 1.3},
-  detectorStatus: {marginTop: 7, color: '#D0D1D3', fontSize: 14, lineHeight: 20},
-  privacyCopy: {marginTop: 14, color: '#77797E', fontSize: 12, lineHeight: 18},
+  detectorStatus: {marginTop: 7, color: finiteColors.text, fontSize: 14, lineHeight: 20},
+  privacyCopy: {marginTop: 14, color: finiteColors.secondaryText, fontSize: 12, lineHeight: 18},
 });

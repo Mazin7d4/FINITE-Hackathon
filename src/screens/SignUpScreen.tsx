@@ -113,7 +113,7 @@ export default function SignUpScreen({onSignUp, onSignIn}: Props) {
       <SafeAreaView style={styles.background} edges={['top', 'bottom']}>
         <KeyboardAvoidingView
           style={styles.background}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <ScrollView
             contentContainerStyle={styles.page}
             keyboardShouldPersistTaps="handled">
