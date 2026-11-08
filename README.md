@@ -15,9 +15,11 @@ Verified locally: TypeScript + 13 JS + 61 Kotlin + `assembleRelease` passed.
 
 ![FINITE app demo](docs/demo.gif)
 
-> Evidence: real Android emulator footage with native-count captions sourced from accessibility logs. [Download the release demo](https://github.com/Mazin7d4/FINITE-Hackathon/releases/download/v0.1.5/finite-demo-short.mp4).
+> Evidence: Real Android emulator footage: FINITE counter, Shorts scrolling, native limit overlay. [Download the release demo](https://github.com/Mazin7d4/FINITE-Hackathon/releases/download/v0.1.5/finite-demo-short.mp4).
 
-<p align="center"><a href="https://github.com/Mazin7d4/FINITE-Hackathon/releases/download/v0.1.5/finite-brag.mp4"><img src="docs/brag-poster.jpg" alt="Watch the FINITE v0.1.5 showcase video" width="720"></a></p>
+## Watch FINITE in action
+
+https://github.com/user-attachments/assets/7b8e0580-d50e-416d-8863-a65d13ad5b74
 
 ## See it in three steps
 
@@ -114,10 +116,6 @@ Useful package scripts are `npm start`, `npm run android`, `npm run web`, `npm t
 - Expand review and reminder insights without weakening the one-shared-limit model.
 - Improve onboarding clarity and motion while preserving the calm, low-friction flow.
 - Add more automated integration coverage around bridge state transitions.
-
-## Credits
-
-Mazin · Simran · Rumeet · Timothy
 
 ## License
 
