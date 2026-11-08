@@ -11,6 +11,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { finiteColors, finiteGradientColors } from "./theme";
+import {normalizeTrackedApps} from "../domain/finitePolicy";
 
 const APPS = [
   { id: "instagram", name: "Instagram", detail: "Reels", icon: "◎" },
@@ -26,7 +27,7 @@ type Props = {
 
 export default function ChooseAppsScreen({ initialSelectedApps, onContinue }: Props) {
   const [selectedApps, setSelectedApps] = useState<string[]>(
-    (initialSelectedApps ?? ["instagram", "youtube"]).filter((id) => id === "instagram" || id === "youtube")
+    normalizeTrackedApps(initialSelectedApps)
   );
 
   function toggleApp(appId: string) {

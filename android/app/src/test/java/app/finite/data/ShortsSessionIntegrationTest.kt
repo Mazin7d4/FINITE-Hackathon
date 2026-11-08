@@ -171,6 +171,9 @@ class ShortsSessionIntegrationTest {
         `when`(preferences.getBoolean(anyString(), anyBoolean())).thenAnswer {
             values[it.getArgument<String>(0)] ?: it.getArgument<Boolean>(1)
         }
+        `when`(preferences.contains(anyString())).thenAnswer {
+            values.containsKey(it.getArgument<String>(0))
+        }
         `when`(preferences.getString(anyString(), nullable(String::class.java))).thenAnswer {
             values[it.getArgument<String>(0)] ?: it.getArgument<String?>(1)
         }
