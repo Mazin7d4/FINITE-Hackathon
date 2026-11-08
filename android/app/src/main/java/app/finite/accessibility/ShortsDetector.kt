@@ -40,7 +40,10 @@ internal class ShortsDetector {
             }
         }
         val engagementPanelOpen = ENGAGEMENT_PANEL_IDS.any(ids::contains)
-        val blocked = BLOCKING_IDS.any(ids::contains)
+        // Loading and end-page nodes can coexist with the pager's real scroll events while the
+        // next Short is settling. Only an engagement sheet covers the content and should cancel
+        // scroll parsing/pending gestures.
+        val blocked = engagementPanelOpen
         val viewer = when {
             "watch_player" in ids -> ShortsViewer.OUTSIDE
             VIEWER_IDS.all(ids::contains) -> ShortsViewer.CONFIRMED
@@ -97,8 +100,6 @@ internal class ShortsDetector {
         private const val YOUTUBE_PACKAGE = "com.google.android.youtube"
         private val VIEWER_IDS = setOf("reel_watch_fragment_root", "reel_watch_player", "reel_recycler")
         private val SCROLL_IDS = setOf("reel_player_underlay", "reel_recycler")
-        private val BLOCKING_IDS = setOf("app_engagement_panel", "engagement_panel",
-            "engagement_panel_content", "reel_playback_loading_spinner", "reel_player_end_page_container")
         private val ENGAGEMENT_PANEL_IDS = setOf("app_engagement_panel", "engagement_panel",
             "engagement_panel_content")
         private val OUTSIDE_IDS = setOf("results", "results_recycler_view", "search_box",

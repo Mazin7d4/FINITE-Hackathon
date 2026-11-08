@@ -45,13 +45,34 @@ class ShortsDetectorTest {
         assertNull(detector.inspect(event, root(viewerNodes())).scroll)
     }
 
-    @Test fun visiblePanelsLoadingAndEndPagesSuppressScrolls() {
-        for (id in listOf("app_engagement_panel", "engagement_panel", "reel_playback_loading_spinner",
-            "reel_player_end_page_container")) {
+    @Test fun engagementPanelSuppressesScrollButLoadingAndEndPageKeepIt() {
+        for (id in listOf("app_engagement_panel", "engagement_panel", "engagement_panel_content")) {
             val result = detector.inspect(event("reel_player_underlay"), root(viewerNodes() + node(id)))
             assertTrue(result.blocked)
             assertNull(result.scroll)
         }
+        for (id in listOf("reel_playback_loading_spinner", "reel_player_end_page_container")) {
+            val result = detector.inspect(event("reel_player_underlay"), root(viewerNodes() + node(id)))
+            assertFalse(result.blocked)
+            assertNotNull(result.scroll)
+        }
+    }
+
+    @Test fun swipeWhoseScrollEventsArriveDuringLoadingCountsOnce() {
+        val counter = ShortsCounter()
+        val entry = detector.inspect(null, root(viewerNodes()))
+        assertNotNull(counter.update(entry, 0).incrementReason)
+        val loadingRoot = root(viewerNodes() + node("reel_playback_loading_spinner"))
+        var swipeCounts = 0
+        listOf(800L to 550, 900L to 180, 1_000L to 0).forEach { (time, y) ->
+            val observation = detector.inspect(
+                event("reel_player_underlay", time, y), loadingRoot,
+            )
+            assertNotNull("loading frame must preserve scroll event", observation.scroll)
+            if (counter.update(observation, time).incrementReason != null) swipeCounts++
+        }
+        assertEquals(1, swipeCounts)
+        assertNull(counter.update(detector.inspect(null, root(viewerNodes())), 1_500).incrementReason)
     }
 
     @Test fun captionAndAccountTextAreNeverRead() {
@@ -120,13 +141,13 @@ class ShortsDetectorTest {
         return node
     }
 
-    private fun event(sourceId: String): AccessibilityEvent {
+    private fun event(sourceId: String, time: Long = 1_000L, y: Int = -550): AccessibilityEvent {
         val event = mock(AccessibilityEvent::class.java)
         val source = node(sourceId)
         `when`(event.source).thenReturn(source)
         `when`(event.eventType).thenReturn(AccessibilityEvent.TYPE_VIEW_SCROLLED)
-        `when`(event.eventTime).thenReturn(1_000L)
-        `when`(event.scrollY).thenReturn(-550)
+        `when`(event.eventTime).thenReturn(time)
+        `when`(event.scrollY).thenReturn(y)
         `when`(event.fromIndex).thenReturn(-1)
         return event
     }
