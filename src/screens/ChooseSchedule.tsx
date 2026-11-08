@@ -3,6 +3,7 @@ import {
   Alert,
   Pressable,
   ScrollView,
+  Switch,
   StatusBar,
   StyleSheet,
   Text,
@@ -28,6 +29,7 @@ const DEFAULT_DAYS: Record<ScheduleId, number[]> = {
 
 export type ScheduleSettings = {
   id: ScheduleId;
+  enabled: boolean;
   days: number[];
   startMinute: number;
   endMinute: number;
@@ -48,6 +50,7 @@ export default function ChooseSchedule({
 }: Props) {
   const [selectedSchedule, setSelectedSchedule] =
     useState<ScheduleId>(initialSchedule);
+  const [enabled, setEnabled] = useState(initialSettings?.enabled === true);
   const [startMinute, setStartMinute] = useState(initialSettings?.startMinute ?? 8 * 60);
   const [endMinute, setEndMinute] = useState(initialSettings?.endMinute ?? 22 * 60);
   const initialDays = initialSettings?.days?.filter((day) => day >= 0 && day <= 6) ?? [];
@@ -195,6 +198,17 @@ export default function ChooseSchedule({
           )}
 
           <Text style={styles.question}>When should FINITE count?</Text>
+          <View style={styles.switchRow}>
+            <View style={styles.switchCopy}>
+              <Text style={styles.switchTitle}>Use a schedule</Text>
+              <Text style={styles.switchDescription}>{enabled ? "Count during the days and times below." : "Off — count all day, every day."}</Text>
+            </View>
+            <Switch accessibilityLabel="Use schedule" value={enabled} onValueChange={setEnabled} trackColor={{false: "rgba(35,39,43,0.18)", true: finiteColors.primary}} thumbColor={finiteColors.surface} />
+          </View>
+          {!enabled && <Pressable accessibilityRole="button" onPress={() => onContinue?.({id: selectedSchedule, enabled: false, days: daysFor(selectedSchedule), startMinute, endMinute})} style={styles.skipButton}>
+            <Text style={styles.skipText}>Skip — use all day</Text>
+          </Pressable>}
+          {enabled && <>
           <View style={styles.timeRow}>
             <Pressable style={styles.timeChoice} onPress={() => chooseTime("start")} accessibilityRole="button">
               <Text style={styles.timeLabel}>Start</Text><Text style={styles.timeValue}>{formatTime(startMinute)}</Text>
@@ -205,6 +219,7 @@ export default function ChooseSchedule({
             </Pressable>
           </View>
           {timeExplanation && <Text style={styles.timeExplanation}>{timeExplanation}</Text>}
+          </>}
 
           <View style={styles.bottom}>
             <Pressable
@@ -215,7 +230,7 @@ export default function ChooseSchedule({
                   Alert.alert("Choose at least one day", "Select at least one day before continuing.");
                   return;
                 }
-                onContinue?.({id: selectedSchedule, days, startMinute, endMinute});
+                onContinue?.({id: selectedSchedule, enabled, days, startMinute, endMinute});
               }}
               style={({ pressed }) => [
                 styles.continueButton,
@@ -236,6 +251,12 @@ export default function ChooseSchedule({
 
 const styles = StyleSheet.create({
   background: { flex: 1 },
+  switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "rgba(255,255,255,0.38)", borderRadius: 12, padding: 12, marginBottom: 10 },
+  switchCopy: { flex: 1, paddingRight: 10 },
+  switchTitle: { color: finiteColors.text, fontSize: 13, fontWeight: "800" },
+  switchDescription: { color: finiteColors.secondaryText, fontSize: 11, marginTop: 3 },
+  skipButton: { alignItems: "center", paddingVertical: 8, marginBottom: 10 },
+  skipText: { color: finiteColors.primary, fontSize: 12, fontWeight: "800" },
   safeArea: { flex: 1 },
   page: {
     flexGrow: 1,

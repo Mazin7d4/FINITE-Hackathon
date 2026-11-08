@@ -34,6 +34,10 @@ class ReminderScheduler(private val context: Context) {
             .remove(key(id, KEY_AT)).remove(key(id, KEY_COUNT)).remove(key(id, KEY_REPEAT)).apply()
     }
 
+    fun cancelAll() {
+        ids().toList().forEach(::cancel)
+    }
+
     fun reschedule() {
         ids().toList().forEach { id ->
             val next = futureOccurrence(id, System.currentTimeMillis())

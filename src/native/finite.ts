@@ -14,6 +14,10 @@ export type FiniteNativeApi = {
   pickReminderDateTime(initialTimestamp: number): Promise<number | null>;
   pickTime(initialMinute: number): Promise<number | null>;
   requestNotificationPermission(): Promise<boolean>;
+  endSession(): Promise<unknown>;
+  cancelAllReminders(): Promise<boolean>;
+  hashPassword(password: string): Promise<{salt: string; hash: string; iterations: number}>;
+  verifyPassword(password: string, salt: string, hash: string, iterations: number): Promise<boolean>;
 };
 
 export const FiniteNative = NativeModules.FiniteNative as FiniteNativeApi;
