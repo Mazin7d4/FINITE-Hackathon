@@ -81,6 +81,9 @@ class SessionStore(context: Context) {
 
     @Synchronized
     fun updateDetectorStatus(status: String) {
+        // Keep the last counted source/reason visible on the counter screen. Detector chatter
+        // must not replace it with a later transient rejection or outside-viewer message.
+        if (preferences.getString(KEY_STATUS, null)?.startsWith("Counted video ") == true) return
         if (preferences.getString(KEY_STATUS, null) == status) return
         preferences.edit().putString(KEY_STATUS, status).apply()
         notifyChanged()
