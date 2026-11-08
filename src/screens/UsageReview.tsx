@@ -1,4 +1,4 @@
-import React from "react";
+import React, {useEffect, useState} from "react";
 import {
   Pressable,
   ScrollView,
@@ -6,10 +6,14 @@ import {
   StyleSheet,
   Text,
   View,
+  AppState,
+  NativeEventEmitter,
+  NativeModules,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { finiteColors, finiteGradientColors } from "./theme";
+import {FiniteNative, type FiniteUsage} from "../native/finite";
 
 type DayUsage = {
   day: string;
@@ -25,6 +29,8 @@ type Props = {
   onBack?: () => void;
   onStartScrolling?: () => void;
   onAddReminder?: () => void;
+  onEditApps?: () => void;
+  onEditSchedule?: () => void;
 };
 
 const APP_INFO: Record<
@@ -38,12 +44,12 @@ const APP_INFO: Record<
 };
 
 const DEFAULT_WEEK: DayUsage[] = [
-  { day: "Sat", videos: 4 },
-  { day: "Sun", videos: 5 },
-  { day: "Mon", videos: 3 },
-  { day: "Tue", videos: 6 },
-  { day: "Wed", videos: 4 },
-  { day: "Thu", videos: 4 },
+  { day: "Sat", videos: 0 },
+  { day: "Sun", videos: 0 },
+  { day: "Mon", videos: 0 },
+  { day: "Tue", videos: 0 },
+  { day: "Wed", videos: 0 },
+  { day: "Thu", videos: 0 },
   { day: "Today", videos: 0 },
 ];
 
@@ -56,10 +62,24 @@ export default function UsageReview({
   onBack,
   onStartScrolling,
   onAddReminder,
+  onEditApps,
+  onEditSchedule,
 }: Props): React.JSX.Element {
-  const remaining = Math.max(0, dailyLimit - todayCount);
-  const progress = dailyLimit > 0 ? Math.min(todayCount / dailyLimit, 1) : 0;
-  const maxWeekUsage = Math.max(1, ...weekUsage.map((item) => item.videos));
+  const [liveUsage, setLiveUsage] = useState<FiniteUsage | undefined>();
+  useEffect(() => {
+    const refresh = () => { void FiniteNative.getUsage().then(setLiveUsage).catch(() => undefined); };
+    refresh();
+    const emitter = new NativeEventEmitter(NativeModules.FiniteNative);
+    const sub = emitter.addListener("FiniteSessionChanged", refresh);
+    const appSub = AppState.addEventListener("change", state => { if (state === "active") refresh(); });
+    return () => { sub.remove(); appSub.remove(); };
+  }, []);
+  const actualTodayCount = liveUsage?.todayCount ?? todayCount;
+  const actualPlatformCounts = liveUsage?.platformCounts ?? platformCounts;
+  const actualWeekUsage = liveUsage?.history.map((item, index) => ({day: index === 6 ? "Today" : new Date(`${item.date}T12:00:00`).toLocaleDateString(undefined, {weekday: "short"}), videos: item.count})) ?? weekUsage;
+  const remaining = Math.max(0, dailyLimit - actualTodayCount);
+  const progress = dailyLimit > 0 ? Math.min(actualTodayCount / dailyLimit, 1) : 0;
+  const maxWeekUsage = Math.max(1, ...actualWeekUsage.map((item) => item.videos));
 
   const appsToShow = selectedApps
     .map((id) => ({ id, ...APP_INFO[id] }))
@@ -120,7 +140,7 @@ export default function UsageReview({
           <View style={styles.summaryCard}>
             <View style={styles.summaryTop}>
               <View style={styles.countRow}>
-                <Text style={styles.todayCount}>{todayCount}</Text>
+                <Text style={styles.todayCount}>{actualTodayCount}</Text>
                 <Text style={styles.countUnit}>videos</Text>
               </View>
 
@@ -143,6 +163,15 @@ export default function UsageReview({
             </Text>
           </View>
 
+          <View style={styles.settingsRow}>
+            <Pressable accessibilityRole="button" onPress={onEditApps} style={styles.settingsButton}>
+              <Text style={styles.settingsButtonText}>Edit apps</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" onPress={onEditSchedule} style={styles.settingsButton}>
+              <Text style={styles.settingsButtonText}>Edit schedule</Text>
+            </Pressable>
+          </View>
+
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Today by platform</Text>
             <Text style={styles.sectionNote}>Short videos only</Text>
@@ -150,7 +179,7 @@ export default function UsageReview({
 
           <View style={styles.platformList}>
             {appsToShow.map((app) => {
-              const count = platformCounts[app.id];
+              const count = actualPlatformCounts[app.id];
 
               return (
                 <View key={app.id} style={styles.platformRow}>
@@ -185,7 +214,7 @@ export default function UsageReview({
           <Text style={styles.chartCaption}>{dailyLimit} video goal</Text>
 
           <View style={styles.chart}>
-            {weekUsage.map((item, index) => {
+            {actualWeekUsage.map((item, index) => {
               const height =
                 item.videos === 0
                   ? 3
@@ -236,6 +265,9 @@ export default function UsageReview({
 
 const styles = StyleSheet.create({
   background: { flex: 1 },
+  settingsRow: { flexDirection: "row", gap: 8, marginBottom: 15 },
+  settingsButton: { flex: 1, borderRadius: 12, borderWidth: 1, borderColor: "rgba(35,39,43,0.16)", paddingVertical: 9, alignItems: "center", backgroundColor: "rgba(255,255,255,0.28)" },
+  settingsButtonText: { color: finiteColors.text, fontSize: 12, fontWeight: "700" },
   safeArea: { flex: 1 },
   page: {
     flexGrow: 1,

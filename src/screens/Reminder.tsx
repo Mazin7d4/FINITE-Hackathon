@@ -10,45 +10,90 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { FiniteNative } from "../native/finite";
 import { finiteColors, finiteGradientColors } from "./theme";
 
 type RepeatOption = "Never" | "Every day" | "Every week";
 type DateMode = "today" | "choose_date";
 
 export type ReminderSettings = {
+  id?: string;
   videoCount: number;
   dateMode: DateMode;
   date: string;
   repeat: RepeatOption;
+  timestamp: number;
 };
+
+export type ReminderRecord = ReminderSettings & { id: string };
 
 type Props = {
   initialVideoCount?: number;
   onBack?: () => void;
   onClose?: () => void;
   onSave?: (settings: ReminderSettings) => void;
+  onDelete?: (id: string) => void;
+  savedReminders?: ReminderRecord[];
+  editingReminder?: ReminderRecord;
+  onEdit?: (id: string) => void;
+  onAddNew?: () => void;
 };
+
+const formatReminderDate = (value: Date) => value.toLocaleString([], {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
 
 export default function AddReminder({
   initialVideoCount = 4,
   onBack,
   onClose,
   onSave,
+  onDelete,
+  savedReminders = [],
+  editingReminder,
+  onEdit,
+  onAddNew,
 }: Props): React.JSX.Element {
   const [videoCount, setVideoCount] = useState(
     Math.max(1, Math.min(100, initialVideoCount)),
   );
-  const [dateMode, setDateMode] = useState<DateMode>("choose_date");
-  const [date, setDate] = useState("Wed, Nov 4");
-  const [repeat, setRepeat] = useState<RepeatOption>("Never");
+  const [dateMode, setDateMode] = useState<DateMode>(editingReminder?.dateMode ?? "choose_date");
+  const [date, setDate] = useState(formatReminderDate(new Date(editingReminder?.timestamp ?? Date.now() + 60 * 60 * 1000)));
+  const [repeat, setRepeat] = useState<RepeatOption>(editingReminder?.repeat ?? "Never");
+  const [reminderDate, setReminderDate] = useState(() => new Date(editingReminder?.timestamp ?? Date.now() + 60 * 60 * 1000));
 
-  const changeDate = () => {
-    Alert.alert("Choose a date", "Select a reminder date.", [
-      { text: "Today", onPress: () => setDate("Today") },
-      { text: "Wed, Nov 4", onPress: () => setDate("Wed, Nov 4") },
-      { text: "Thu, Nov 5", onPress: () => setDate("Thu, Nov 5") },
-      { text: "Cancel", style: "cancel" },
-    ]);
+  React.useEffect(() => {
+    setVideoCount(Math.max(1, Math.min(100, editingReminder?.videoCount ?? initialVideoCount)));
+    setDateMode(editingReminder?.dateMode ?? "choose_date");
+    setDate(formatReminderDate(new Date(editingReminder?.timestamp ?? Date.now() + 60 * 60 * 1000)));
+    setRepeat(editingReminder?.repeat ?? "Never");
+    setReminderDate(new Date(editingReminder?.timestamp ?? Date.now() + 60 * 60 * 1000));
+  }, [editingReminder, initialVideoCount]);
+
+  const setToday = () => {
+    const next = new Date();
+    next.setHours(reminderDate.getHours(), reminderDate.getMinutes(), 0, 0);
+    if (next.getTime() <= Date.now()) next.setTime(Date.now() + 2 * 60 * 1000);
+    setDateMode("today");
+    setReminderDate(next);
+    setDate(formatReminderDate(next));
+  };
+
+  const changeDate = async () => {
+    try {
+      const pickedTimestamp = await FiniteNative.pickReminderDateTime(reminderDate.getTime());
+      if (pickedTimestamp == null) return;
+      const picked = new Date(pickedTimestamp);
+      setReminderDate(picked);
+      setDateMode(picked.toDateString() === new Date().toDateString() ? "today" : "choose_date");
+      setDate(formatReminderDate(picked));
+    } catch {
+      Alert.alert("Unable to choose a date", "Please try again while FINITE is open.");
+    }
   };
 
   const changeRepeat = () => {
@@ -94,7 +139,7 @@ export default function AddReminder({
             </Pressable>
           </View>
 
-          <Text style={styles.title}>Add reminder</Text>
+          <Text style={styles.title}>{editingReminder ? "Edit reminder" : "Add reminder"}</Text>
           <Text style={styles.description}>
             A little nudge to make time for the videos you’ve saved.
           </Text>
@@ -134,6 +179,19 @@ export default function AddReminder({
             </Pressable>
           </View>
 
+          {savedReminders.length > 0 && <View style={styles.savedCard}>
+            <Text style={styles.savedHeading}>Saved reminders</Text>
+            {savedReminders.map(item => <View key={item.id} style={styles.savedRow}>
+              <Pressable accessibilityRole="button" onPress={() => onEdit?.(item.id)} style={styles.savedCopy}>
+                <Text style={styles.savedTitle}>{item.videoCount} videos · {new Date(item.timestamp).toLocaleString([], {weekday: "short", hour: "numeric", minute: "2-digit"})}</Text>
+                <Text style={styles.savedDetail}>{item.repeat === "Never" ? "One time" : item.repeat}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Delete ${item.videoCount} video reminder`} onPress={() => onDelete?.(item.id)} style={styles.savedDelete}>
+                <Text style={styles.savedDeleteText}>Delete</Text>
+              </Pressable>
+            </View>)}
+          </View>}
+
           <Text style={styles.question}>When would you like a reminder?</Text>
 
           <View style={styles.dateChoices}>
@@ -141,8 +199,7 @@ export default function AddReminder({
               accessibilityRole="button"
               accessibilityState={{ selected: dateMode === "today" }}
               onPress={() => {
-                setDateMode("today");
-                setDate("Today");
+                setToday();
               }}
               style={[
                 styles.dateChoice,
@@ -202,9 +259,13 @@ export default function AddReminder({
           <View style={styles.bottom}>
             <Pressable
               accessibilityRole="button"
-              onPress={() =>
-                onSave?.({ videoCount, dateMode, date, repeat })
-              }
+              onPress={() => {
+                if (reminderDate.getTime() <= Date.now()) {
+                  Alert.alert("Choose a future time", "This reminder time has already passed. Pick a later date or time.");
+                  return;
+                }
+                onSave?.({ id: editingReminder?.id, videoCount, dateMode, date, repeat, timestamp: reminderDate.getTime() });
+              }}
               style={({ pressed }) => [
                 styles.saveButton,
                 pressed && styles.pressed,
@@ -215,8 +276,14 @@ export default function AddReminder({
             </Pressable>
 
             <Text style={styles.footerText}>
-              We’ll remind you when you reach your selected video count.
+              We’ll remind you at the scheduled date and time.
             </Text>
+            {editingReminder && onAddNew && <Pressable accessibilityRole="button" onPress={onAddNew} style={styles.addNewButton}>
+              <Text style={styles.addNewText}>Add new reminder</Text>
+            </Pressable>}
+            {editingReminder && onDelete && <Pressable accessibilityRole="button" onPress={() => onDelete(editingReminder.id)} style={styles.deleteButton}>
+              <Text style={styles.deleteText}>Delete this reminder</Text>
+            </Pressable>}
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -228,6 +295,14 @@ const styles = StyleSheet.create({
   background: {
     flex: 1,
   },
+  savedCard: { backgroundColor: "rgba(255,255,255,0.46)", borderRadius: 16, padding: 12, marginBottom: 15 },
+  savedHeading: { color: finiteColors.text, fontSize: 12, fontWeight: "800", letterSpacing: 0.6, marginBottom: 5 },
+  savedRow: { flexDirection: "row", alignItems: "center", borderTopWidth: 1, borderTopColor: "rgba(35,39,43,0.10)", paddingVertical: 8 },
+  savedCopy: { flex: 1 },
+  savedTitle: { color: finiteColors.text, fontSize: 13, fontWeight: "700" },
+  savedDetail: { color: finiteColors.secondaryText, fontSize: 11, marginTop: 2 },
+  savedDelete: { paddingHorizontal: 5, paddingVertical: 6 },
+  savedDeleteText: { color: "#B54B43", fontSize: 11, fontWeight: "700" },
   safeArea: {
     flex: 1,
   },
@@ -427,4 +502,8 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.78,
   },
+  deleteButton: { alignItems: "center", paddingTop: 14 },
+  deleteText: { color: finiteColors.secondaryText, fontSize: 12, textDecorationLine: "underline" },
+  addNewButton: { alignItems: "center", paddingTop: 12 },
+  addNewText: { color: finiteColors.primary, fontSize: 11, fontWeight: "700" },
 });

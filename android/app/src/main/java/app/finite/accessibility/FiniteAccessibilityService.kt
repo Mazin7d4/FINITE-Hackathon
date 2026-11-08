@@ -31,6 +31,12 @@ class FiniteAccessibilityService : AccessibilityService() {
     private val shortsDetector = ShortsDetector()
     private val shortsCounter = ShortsCounter()
     private val handler = Handler(Looper.getMainLooper())
+    private val scheduleGuard = object : Runnable {
+        override fun run() {
+            dismissOverlayIfPolicyChanged()
+            handler.postDelayed(this, SCHEDULE_GUARD_INTERVAL_MS)
+        }
+    }
     private var lastPackage: String? = null
     private var receiverRegistered = false
     private var lastShortsDiagnosticAt = 0L
@@ -52,6 +58,8 @@ class FiniteAccessibilityService : AccessibilityService() {
                 resetDetectionState()
                 dismissOverlay()
                 Log.d(TAG, "session reset; both detectors cleared")
+            } else if (intent?.action == SessionStore.ACTION_STATE_CHANGED) {
+                dismissOverlayIfPolicyChanged()
             }
         }
     }
@@ -67,6 +75,7 @@ class FiniteAccessibilityService : AccessibilityService() {
             IntentFilter(ACTION_RESET_DETECTION).apply { addAction(SessionStore.ACTION_STATE_CHANGED) },
             ContextCompat.RECEIVER_NOT_EXPORTED)
         receiverRegistered = true
+        handler.post(scheduleGuard)
     }
 
     override fun onServiceConnected() {
@@ -78,6 +87,9 @@ class FiniteAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         val packageName = event.packageName?.toString()
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            dismissOverlayIfPolicyChanged(packageName ?: rootInActiveWindow?.packageName?.toString())
+        }
         if (packageName != INSTAGRAM_PACKAGE && packageName != YOUTUBE_PACKAGE) return
         val session = store.snapshot()
         if (!session.active || overlay != null) {
@@ -156,9 +168,19 @@ class FiniteAccessibilityService : AccessibilityService() {
     }
 
     private fun recordCount(reason: String) {
-        val result = store.increment(reason)
+        val packageName = lastPackage
+        val result = if (packageName == INSTAGRAM_PACKAGE) {
+            store.increment(SessionStore.INSTAGRAM, reason)
+        } else if (packageName == YOUTUBE_PACKAGE) {
+            store.increment(SessionStore.YOUTUBE, reason)
+        } else {
+            Log.w(TAG, "Ignoring count without a supported foreground package")
+            return
+        }
         Log.i(TAG, "Count=${result.state.count}/${result.state.limit}; reason=$reason")
-        if (result.shouldShowLimit && overlay == null) showLimitOverlay(result.state.limit)
+        if (result.shouldShowLimit && overlay == null && packageName != null && store.canShowLimitFor(packageName)) {
+            showLimitOverlay(result.state.limit)
+        }
     }
 
     private fun logDiagnostic(event: AccessibilityEvent, detection: Detection) {
@@ -180,27 +202,32 @@ class FiniteAccessibilityService : AccessibilityService() {
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(28), dp(28), dp(28), dp(24))
             background = GradientDrawable().apply {
-                setColor(Color.rgb(20, 21, 23))
+                orientation = GradientDrawable.Orientation.TOP_BOTTOM
+                colors = intArrayOf(
+                    Color.parseColor(FINITE_BACKGROUND_TOP),
+                    Color.parseColor(FINITE_BACKGROUND_MIDDLE),
+                    Color.parseColor(FINITE_BACKGROUND_BOTTOM),
+                )
                 cornerRadius = dp(24).toFloat()
-                setStroke(dp(1), Color.rgb(63, 65, 68))
+                setStroke(dp(1), Color.parseColor(FINITE_DIVIDER))
             }
             elevation = dp(16).toFloat()
         }
 
         panel.addView(TextView(this).apply {
             text = "YOU’VE REACHED YOUR LIMIT"
-            setTextColor(Color.rgb(217, 255, 87))
+            setTextColor(Color.parseColor(FINITE_SECONDARY_TEXT))
             textSize = 13f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
             letterSpacing = 0.08f
             gravity = Gravity.CENTER
         }, matchWrap(top = 0, bottom = 12))
 
         panel.addView(TextView(this).apply {
             text = "You planned to watch $limit Reels and Shorts. You’ve reached your goal!"
-            setTextColor(Color.WHITE)
+            setTextColor(Color.parseColor(FINITE_TEXT))
             textSize = 21f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
             gravity = Gravity.CENTER
         }, matchWrap(top = 0, bottom = 22))
 
@@ -242,13 +269,18 @@ class FiniteAccessibilityService : AccessibilityService() {
     private fun overlayButton(label: String, primary: Boolean, action: () -> Unit): Button =
         Button(this).apply {
             text = label
-            textSize = 16f
+            textSize = 15f
             isAllCaps = false
-            setTextColor(if (primary) Color.rgb(9, 10, 11) else Color.WHITE)
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            setTextColor(Color.parseColor(if (primary) FINITE_SURFACE else FINITE_TEXT))
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            minHeight = dp(50)
+            setPadding(dp(16), 0, dp(16), 0)
             background = GradientDrawable().apply {
-                setColor(if (primary) Color.rgb(217, 255, 87) else Color.rgb(42, 43, 46))
-                cornerRadius = dp(14).toFloat()
+                setColor(Color.parseColor(if (primary) FINITE_PRIMARY else FINITE_SURFACE))
+                cornerRadius = dp(13).toFloat()
+                if (!primary) {
+                    setStroke(dp(1), Color.parseColor(FINITE_DIVIDER))
+                }
             }
             setOnClickListener { action() }
         }
@@ -272,6 +304,18 @@ class FiniteAccessibilityService : AccessibilityService() {
         overlay = null
     }
 
+    private fun dismissOverlayIfPolicyChanged(currentPackage: String? = lastPackage) {
+        if (overlay == null) return
+        val packageName = lastPackage
+        val switchedToAnotherPackage = currentPackage != null &&
+            currentPackage != packageName && currentPackage != applicationContext.packageName
+        if (!store.snapshot().active || packageName == null || switchedToAnotherPackage ||
+            !store.canShowLimitFor(packageName)) {
+            dismissOverlay()
+            Log.d(TAG, "limit overlay dismissed; session policy no longer applies")
+        }
+    }
+
     private fun resetDetectionState() {
         handler.removeCallbacks(shortsFollowUp)
         handler.removeCallbacks(reelFollowUp)
@@ -289,6 +333,7 @@ class FiniteAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(scheduleGuard)
         handler.removeCallbacks(shortsFollowUp)
         handler.removeCallbacks(reelFollowUp)
         if (receiverRegistered) {
@@ -304,9 +349,20 @@ class FiniteAccessibilityService : AccessibilityService() {
     companion object {
         const val ACTION_RESET_DETECTION = "app.finite.RESET_DETECTION"
         private const val TAG = "FINITE"
-        private const val INSTAGRAM_PACKAGE = "com.instagram.android"
-        private const val YOUTUBE_PACKAGE = "com.google.android.youtube"
+        private const val INSTAGRAM_PACKAGE = SessionStore.INSTAGRAM_PACKAGE
+        private const val YOUTUBE_PACKAGE = SessionStore.YOUTUBE_PACKAGE
         private const val DIAGNOSTIC_THROTTLE_MS = 1_500L
+        private const val SCHEDULE_GUARD_INTERVAL_MS = 60_000L
+
+        // Keep the native accessibility overlay aligned with src/screens/theme.ts.
+        private const val FINITE_BACKGROUND_TOP = "#B0D6DD"
+        private const val FINITE_BACKGROUND_MIDDLE = "#BADBCC"
+        private const val FINITE_BACKGROUND_BOTTOM = "#C3DDC5"
+        private const val FINITE_PRIMARY = "#5B7A8C"
+        private const val FINITE_TEXT = "#162B39"
+        private const val FINITE_SECONDARY_TEXT = "#607684"
+        private const val FINITE_SURFACE = "#FFFFFF"
+        private const val FINITE_DIVIDER = "#DCE8E5"
     }
 }
 
