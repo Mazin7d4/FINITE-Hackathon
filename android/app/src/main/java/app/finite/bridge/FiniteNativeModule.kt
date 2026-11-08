@@ -73,7 +73,11 @@ class FiniteNativeModule(
     @ReactMethod
     fun configure(limit: Double, selectedApps: ReadableArray, days: ReadableArray, startMinute: Double, endMinute: Double, promise: Promise) {
         val apps = (0 until selectedApps.size()).mapNotNull { selectedApps.getString(it) }.toSet()
-        val dayMask = (0 until days.size()).fold(0) { mask, index -> mask or (1 shl days.getInt(index)) }
+        val dayMask = if ((0 until days.size()).all { days.getInt(it) in 0..6 }) {
+            (0 until days.size()).fold(0) { mask, index -> mask or (1 shl days.getInt(index)) }
+        } else {
+            -1
+        }
         store.configure(limit.toInt(), apps, dayMask, startMinute.toInt(), endMinute.toInt())
         promise.resolve(stateMap())
     }
@@ -112,10 +116,10 @@ class FiniteNativeModule(
             return
         }
         val configuredApps = store.schedule().selectedApps
-        val launchIntent = configuredApps.asSequence()
-            .map { app -> if (app == SessionStore.INSTAGRAM) INSTAGRAM_PACKAGE else YOUTUBE_PACKAGE }
-            .mapNotNull(reactContext.packageManager::getLaunchIntentForPackage)
-            .firstOrNull()
+        val launchPackage = selectLaunchPackage(configuredApps) { packageName ->
+            reactContext.packageManager.getLaunchIntentForPackage(packageName) != null
+        }
+        val launchIntent = launchPackage?.let(reactContext.packageManager::getLaunchIntentForPackage)
         if (launchIntent == null) {
             promise.reject("SUPPORTED_APP_MISSING", "Neither Instagram nor YouTube is installed")
             return
@@ -316,8 +320,6 @@ class FiniteNativeModule(
 
     companion object {
         private const val EVENT_STATE_CHANGED = "FiniteSessionChanged"
-        private const val INSTAGRAM_PACKAGE = "com.instagram.android"
-        private const val YOUTUBE_PACKAGE = "com.google.android.youtube"
         private const val TAG = "FINITE"
         private const val NOTIFICATION_REQUEST_CODE = 9031
     }

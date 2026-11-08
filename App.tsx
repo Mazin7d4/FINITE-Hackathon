@@ -15,7 +15,8 @@ import SaveGoal from './src/screens/SaveGoal';
 import UsageReview from './src/screens/UsageReview';
 import Reminder, {type ReminderRecord} from './src/screens/Reminder';
 import { finiteGradientColors } from './src/screens/theme';
-import {FiniteNative, supportedApps} from './src/native/finite';
+import {FiniteNative} from './src/native/finite';
+import {DEFAULT_SCHEDULE, normalizeSchedule, normalizeTrackedApps} from './src/domain/finitePolicy';
 
 type Screen =
   | 'login'
@@ -40,7 +41,7 @@ export default function App(): React.JSX.Element {
   const [history, setHistory] = useState<Screen[]>([]);
   const [selectedApps, setSelectedApps] = useState<string[]>(['instagram', 'youtube']);
   const [goal, setGoal] = useState<PersonalGoal | undefined>();
-  const [schedule, setSchedule] = useState<ScheduleSettings>({id: 'exam_week', days: [0, 1, 2, 3, 4, 5, 6], startMinute: 480, endMinute: 1320});
+  const [schedule, setSchedule] = useState<ScheduleSettings>({id: 'exam_week', ...DEFAULT_SCHEDULE});
   const [storageLoaded, setStorageLoaded] = useState(false);
   const [reminders, setReminders] = useState<ReminderRecord[]>([]);
   const [editingReminderId, setEditingReminderId] = useState<string | undefined>();
@@ -59,10 +60,11 @@ export default function App(): React.JSX.Element {
 
         if (!mounted) return;
         if (savedGoal) setGoal(JSON.parse(savedGoal) as PersonalGoal);
-        if (savedApps) setSelectedApps((JSON.parse(savedApps) as string[]).filter(app => supportedApps.includes(app as never)));
+        if (savedApps) setSelectedApps(normalizeTrackedApps(JSON.parse(savedApps)));
         if (savedSchedule) {
-          const parsed = JSON.parse(savedSchedule) as ScheduleSettings;
-          setSchedule(parsed.id ? parsed : {id: 'exam_week', days: [0, 1, 2, 3, 4, 5, 6], startMinute: 480, endMinute: 1320});
+          const parsed = JSON.parse(savedSchedule) as Partial<ScheduleSettings>;
+          const normalized = normalizeSchedule(parsed);
+          setSchedule({id: parsed.id === 'weekdays' || parsed.id === 'busy_week' || parsed.id === 'exam_week' ? parsed.id : 'exam_week', ...normalized});
         }
         if (savedReminders) {
           const parsed = JSON.parse(savedReminders) as ReminderRecord[];
@@ -82,7 +84,7 @@ export default function App(): React.JSX.Element {
   }, []);
 
   const persistSelectedApps = (apps: string[]) => {
-    const supported = apps.filter(app => supportedApps.includes(app as never));
+    const supported = normalizeTrackedApps(apps);
     setSelectedApps(supported);
     void AsyncStorage.setItem(STORAGE_KEYS.selectedApps, JSON.stringify(supported)).catch(error => {
       console.warn('Unable to save FINITE app selection', error);

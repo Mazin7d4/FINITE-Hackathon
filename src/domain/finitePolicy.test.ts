@@ -1,4 +1,4 @@
-import {isScheduleActive, selectedTrackedApps} from './finitePolicy';
+import {DEFAULT_SCHEDULE, isScheduleActive, normalizeSchedule, normalizeTrackedApps, selectedTrackedApps} from './finitePolicy';
 
 describe('FINITE schedule policy', () => {
   test('keeps an overnight window attached to its start day', () => {
@@ -13,5 +13,24 @@ describe('FINITE schedule policy', () => {
 
   test('only exposes apps with implemented detectors', () => {
     expect(selectedTrackedApps(['instagram', 'tiktok', 'youtube', 'snapchat'])).toEqual(['instagram', 'youtube']);
+  });
+
+  test('falls back to both apps for missing, empty, legacy, and labeled values', () => {
+    expect(normalizeTrackedApps(undefined)).toEqual(['instagram', 'youtube']);
+    expect(normalizeTrackedApps([])).toEqual(['instagram', 'youtube']);
+    expect(normalizeTrackedApps(['old-instagram-id'])).toEqual(['instagram', 'youtube']);
+    expect(normalizeTrackedApps(['com.instagram.android', 'YouTube Shorts'])).toEqual(['instagram', 'youtube']);
+  });
+
+  test('falls back to an always-active schedule when saved data is absent or invalid', () => {
+    expect(normalizeSchedule(undefined)).toEqual(DEFAULT_SCHEDULE);
+    expect(normalizeSchedule({id: 'exam_week', days: [], startMinute: 480, endMinute: 1320})).toEqual(DEFAULT_SCHEDULE);
+    expect(isScheduleActive(new Date(2026, 10, 8, 3, 0), normalizeSchedule(undefined))).toBe(true);
+  });
+
+  test('keeps an explicit weekday schedule restricted', () => {
+    const weekdays = normalizeSchedule({days: [1, 2, 3, 4, 5], startMinute: 8 * 60, endMinute: 22 * 60});
+    expect(isScheduleActive(new Date(2026, 10, 6, 12, 0), weekdays)).toBe(true);
+    expect(isScheduleActive(new Date(2026, 10, 7, 12, 0), weekdays)).toBe(false);
   });
 });

@@ -26,8 +26,8 @@ data class UsageDay(val date: String, val count: Int, val instagram: Int, val yo
 data class ScheduleConfig(
     val selectedApps: Set<String> = setOf(SessionStore.INSTAGRAM, SessionStore.YOUTUBE),
     val daysMask: Int = SessionStore.ALL_DAYS_MASK,
-    val startMinute: Int = 8 * 60,
-    val endMinute: Int = 22 * 60,
+    val startMinute: Int = 0,
+    val endMinute: Int = 0,
 )
 
 class SessionStore(
@@ -52,23 +52,32 @@ class SessionStore(
 
     @Synchronized
     fun configure(limit: Int, selectedApps: Set<String>, daysMask: Int, startMinute: Int, endMinute: Int) {
+        val apps = normalizeApps(selectedApps)
+        val safeSchedule = normalizeSchedule(daysMask, startMinute, endMinute)
         preferences.edit()
             .putInt(KEY_LIMIT, limit.coerceIn(MIN_LIMIT, MAX_LIMIT))
-            .putStringSet(KEY_APPS, selectedApps.intersect(SUPPORTED_APPS))
-            .putInt(KEY_DAYS, daysMask and ALL_DAYS_MASK)
-            .putInt(KEY_START, startMinute.coerceIn(0, MINUTES_PER_DAY - 1))
-            .putInt(KEY_END, endMinute.coerceIn(0, MINUTES_PER_DAY - 1))
+            .putStringSet(KEY_APPS, apps)
+            .putInt(KEY_DAYS, safeSchedule.first)
+            .putInt(KEY_START, safeSchedule.second.first)
+            .putInt(KEY_END, safeSchedule.second.second)
             .apply()
         notifyChanged()
     }
 
     @Synchronized
-    fun schedule(): ScheduleConfig = ScheduleConfig(
-        selectedApps = preferences.getStringSet(KEY_APPS, SUPPORTED_APPS)?.intersect(SUPPORTED_APPS) ?: SUPPORTED_APPS,
-        daysMask = preferences.getInt(KEY_DAYS, ALL_DAYS_MASK) and ALL_DAYS_MASK,
-        startMinute = preferences.getInt(KEY_START, 8 * 60).coerceIn(0, MINUTES_PER_DAY - 1),
-        endMinute = preferences.getInt(KEY_END, 22 * 60).coerceIn(0, MINUTES_PER_DAY - 1),
-    )
+    fun schedule(): ScheduleConfig {
+        val safeSchedule = normalizeSchedule(
+            preferences.intOrNull(KEY_DAYS),
+            preferences.intOrNull(KEY_START),
+            preferences.intOrNull(KEY_END),
+        )
+        return ScheduleConfig(
+            selectedApps = normalizeApps(preferences.getStringSet(KEY_APPS, null)),
+            daysMask = safeSchedule.first,
+            startMinute = safeSchedule.second.first,
+            endMinute = safeSchedule.second.second,
+        )
+    }
 
     @Synchronized
     fun start(limit: Int): SessionState {
@@ -107,14 +116,15 @@ class SessionStore(
     @Synchronized
     fun increment(packageName: String, reason: String): CountResult {
         val before = snapshot()
-        if (!before.active || packageName !in schedule().selectedApps || !isWithinSchedule()) {
+        val appId = normalizeAppId(packageName)
+        if (!before.active || appId == null || appId !in schedule().selectedApps || !isWithinSchedule()) {
             return CountResult(before, false)
         }
         val current = todayUsage()
         val next = UsageDay(
             todayKey(), current.count + 1,
-            current.instagram + if (packageName == INSTAGRAM) 1 else 0,
-            current.youtube + if (packageName == YOUTUBE) 1 else 0,
+            current.instagram + if (appId == INSTAGRAM) 1 else 0,
+            current.youtube + if (appId == YOUTUBE) 1 else 0,
         )
         saveUsage(next)
         val shouldShow = next.count >= before.limit && !before.limitAcknowledged
@@ -139,12 +149,19 @@ class SessionStore(
     /** Final policy check for UI side effects; overlays must never escape app or schedule policy. */
     @Synchronized
     fun canShowLimitFor(packageName: String): Boolean {
-        val appId = when (packageName) {
-            INSTAGRAM, INSTAGRAM_PACKAGE -> INSTAGRAM
-            YOUTUBE, YOUTUBE_PACKAGE -> YOUTUBE
-            else -> return false
-        }
+        val appId = normalizeAppId(packageName) ?: return false
         return appId in schedule().selectedApps && isWithinSchedule()
+    }
+
+    private fun normalizeAppId(value: String): String? = when (value.trim().lowercase(Locale.US)) {
+        INSTAGRAM, "instagram reels", "reels", INSTAGRAM_PACKAGE -> INSTAGRAM
+        YOUTUBE, "youtube shorts", "shorts", YOUTUBE_PACKAGE -> YOUTUBE
+        else -> null
+    }
+
+    private fun normalizeApps(values: Set<String>?): Set<String> {
+        val normalized = values.orEmpty().mapNotNull(::normalizeAppId).toSet()
+        return normalized.ifEmpty { SUPPORTED_APPS }
     }
 
     @Synchronized
@@ -239,6 +256,15 @@ class SessionStore(
         val SUPPORTED_APPS = setOf(INSTAGRAM, YOUTUBE)
         const val ALL_DAYS_MASK = 0x7f
 
+        /** Normalizes all schedule fields atomically; one invalid field invalidates the whole policy. */
+        fun normalizeSchedule(daysMask: Int?, startMinute: Int?, endMinute: Int?): Pair<Int, Pair<Int, Int>> {
+            val valid = daysMask != null && daysMask in 1..ALL_DAYS_MASK &&
+                startMinute != null && startMinute in 0 until MINUTES_PER_DAY &&
+                endMinute != null && endMinute in 0 until MINUTES_PER_DAY
+            return if (valid) daysMask!! to (startMinute!! to endMinute!!)
+            else ALL_DAYS_MASK to (0 to 0)
+        }
+
         private const val PREFERENCES = "finite_session"
         private const val KEY_LIMIT = "limit"
         private const val KEY_COUNT = "count"
@@ -253,4 +279,7 @@ class SessionStore(
         private const val KEY_END = "schedule_end"
     }
 }
+
+private fun android.content.SharedPreferences.intOrNull(key: String): Int? =
+    if (contains(key)) getInt(key, 0) else null
 
