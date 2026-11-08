@@ -42,9 +42,9 @@ const initialState: SessionState = {
   accessibilityEnabled: false,
 };
 
-function FiniteApp(): React.JSX.Element {
+function FiniteApp({initialLimit}: {initialLimit?: number}): React.JSX.Element {
   const [session, setSession] = useState(initialState);
-  const [limitText, setLimitText] = useState('5');
+  const [limitText, setLimitText] = useState(String(initialLimit ?? 5));
   const limit = Number(limitText);
   const validLimit = Number.isInteger(limit) && limit >= 1 && limit <= 100;
 
@@ -225,8 +225,8 @@ function FiniteApp(): React.JSX.Element {
   );
 }
 
-export default function FiniteScreen(): React.JSX.Element {
-  return <FiniteApp />;
+export default function FiniteScreen({initialLimit}: {initialLimit?: number}): React.JSX.Element {
+  return <FiniteApp initialLimit={initialLimit} />;
 }
 
 const styles = StyleSheet.create({
