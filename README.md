@@ -67,20 +67,7 @@ Counting is best effort. Instagram and YouTube do not expose an official per-vid
 
 ## Architecture
 
-```text
-React Native / TypeScript UI
-        │  FiniteNative bridge + state events
-        ▼
-Kotlin session module ── SharedPreferences / SessionStore
-        │
-        ▼
-Android AccessibilityService
-   ├── ReelDetector      ─┐
-   └── ShortsDetector     ├── shared increment policy → native overlay
-                          ┘
-```
-
-The bridge owns session lifecycle and launch selection. The accessibility service observes only the selected apps while a session is active; both detectors feed the same native `SessionStore.increment()` path. The React Native dashboard subscribes to native state updates, so the counter and overlay share one source of truth.
+![FINITE shared-limit architecture](docs/finite-architecture.png)
 
 ## Quick start
 
