@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Alert } from "react-native";
 import {
   Pressable,
   ScrollView,
@@ -25,10 +26,14 @@ type Props = {
 
 export default function ChooseAppsScreen({ initialSelectedApps, onContinue }: Props) {
   const [selectedApps, setSelectedApps] = useState<string[]>(
-    initialSelectedApps ?? APPS.map((app) => app.id)
+    (initialSelectedApps ?? ["instagram", "youtube"]).filter((id) => id === "instagram" || id === "youtube")
   );
 
   function toggleApp(appId: string) {
+    if (appId !== "instagram" && appId !== "youtube") {
+      Alert.alert("Coming soon", "FINITE currently counts Instagram Reels and YouTube Shorts. This app is not tracked yet.");
+      return;
+    }
     setSelectedApps((current) =>
       current.includes(appId)
         ? current.filter((id) => id !== appId)

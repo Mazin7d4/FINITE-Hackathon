@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import {
+  Alert,
   Pressable,
   ScrollView,
   StatusBar,
@@ -9,6 +10,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { FiniteNative } from "../native/finite";
 import { finiteColors, finiteGradientColors } from "./theme";
 
 const SCHEDULES = [
@@ -16,22 +18,70 @@ const SCHEDULES = [
   { id: "weekdays", title: "Weekdays — Mon–Fri", icon: "▦" },
   { id: "busy_week", title: "Busy week — Customize days", icon: "▱" },
 ] as const;
-
 export type ScheduleId = (typeof SCHEDULES)[number]["id"];
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DEFAULT_DAYS: Record<ScheduleId, number[]> = {
+  exam_week: [0, 1, 2, 3, 4, 5, 6],
+  weekdays: [1, 2, 3, 4, 5],
+  busy_week: [1, 2, 3, 4, 5],
+};
+
+export type ScheduleSettings = {
+  id: ScheduleId;
+  days: number[];
+  startMinute: number;
+  endMinute: number;
+};
 
 type Props = {
   initialSchedule?: ScheduleId;
+  initialSettings?: ScheduleSettings;
   onBack?: () => void;
-  onContinue?: (schedule: ScheduleId) => void;
+  onContinue?: (schedule: ScheduleSettings) => void;
 };
 
 export default function ChooseSchedule({
   initialSchedule = "exam_week",
+  initialSettings,
   onBack,
   onContinue,
 }: Props) {
   const [selectedSchedule, setSelectedSchedule] =
     useState<ScheduleId>(initialSchedule);
+  const [startMinute, setStartMinute] = useState(initialSettings?.startMinute ?? 8 * 60);
+  const [endMinute, setEndMinute] = useState(initialSettings?.endMinute ?? 22 * 60);
+  const initialDays = initialSettings?.days?.filter((day) => day >= 0 && day <= 6) ?? [];
+  const [selectedDays, setSelectedDays] = useState<number[]>(
+    initialSettings?.days ? [...new Set(initialDays)] : DEFAULT_DAYS[initialSchedule],
+  );
+  const daysFor = (id: ScheduleId) => id === "busy_week" ? selectedDays : DEFAULT_DAYS[id];
+  const formatTime = (minute: number) => `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
+  const chooseTime = async (kind: "start" | "end") => {
+    try {
+      const pickedMinute = await FiniteNative.pickTime(kind === "start" ? startMinute : endMinute);
+      if (pickedMinute == null) return;
+      if (kind === "start") setStartMinute(pickedMinute);
+      else setEndMinute(pickedMinute);
+    } catch {
+      Alert.alert("Unable to choose a time", "Please try again while FINITE is open.");
+    }
+  };
+  const toggleDay = (day: number) => {
+    if (selectedDays.includes(day)) {
+      if (selectedDays.length === 1) {
+        Alert.alert("Choose at least one day", "Busy week needs at least one selected day.");
+        return;
+      }
+      setSelectedDays(selectedDays.filter((selectedDay) => selectedDay !== day));
+      return;
+    }
+    setSelectedDays([...selectedDays, day].sort((a, b) => a - b));
+  };
+  const timeExplanation = startMinute === endMinute
+    ? "All day — FINITE counts throughout the selected days."
+    : startMinute > endMinute
+      ? "Overnight — this window continues past midnight into the next day."
+      : undefined;
 
   const selectedTitle =
     SCHEDULES.find((schedule) => schedule.id === selectedSchedule)?.title ??
@@ -89,7 +139,11 @@ export default function ChooseSchedule({
                   key={schedule.id}
                   accessibilityRole="radio"
                   accessibilityState={{ selected }}
-                  onPress={() => setSelectedSchedule(schedule.id)}
+                  onPress={() => {
+                    setSelectedSchedule(schedule.id);
+                    if (schedule.id === "exam_week") { setStartMinute(8 * 60); setEndMinute(22 * 60); }
+                    if (schedule.id === "weekdays") { setStartMinute(7 * 60); setEndMinute(22 * 60); }
+                  }}
                   style={({ pressed }) => [
                     styles.option,
                     selected && styles.optionSelected,
@@ -113,10 +167,56 @@ export default function ChooseSchedule({
             })}
           </View>
 
+          {selectedSchedule === "busy_week" && (
+            <View style={styles.dayPicker}>
+              <Text style={styles.dayPickerLabel}>Active days</Text>
+              <View style={styles.dayRow}>
+                {DAYS.map((day, index) => {
+                  const selected = selectedDays.includes(index);
+                  return (
+                    <Pressable
+                      key={day}
+                      accessibilityRole="checkbox"
+                      accessibilityLabel={day}
+                      accessibilityState={{ checked: selected }}
+                      onPress={() => toggleDay(index)}
+                      style={({ pressed }) => [
+                        styles.dayChoice,
+                        selected && styles.dayChoiceSelected,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text style={[styles.dayText, selected && styles.dayTextSelected]}>{day}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
+          <Text style={styles.question}>When should FINITE count?</Text>
+          <View style={styles.timeRow}>
+            <Pressable style={styles.timeChoice} onPress={() => chooseTime("start")} accessibilityRole="button">
+              <Text style={styles.timeLabel}>Start</Text><Text style={styles.timeValue}>{formatTime(startMinute)}</Text>
+            </Pressable>
+            <Text style={styles.timeDash}>→</Text>
+            <Pressable style={styles.timeChoice} onPress={() => chooseTime("end")} accessibilityRole="button">
+              <Text style={styles.timeLabel}>End</Text><Text style={styles.timeValue}>{formatTime(endMinute)}</Text>
+            </Pressable>
+          </View>
+          {timeExplanation && <Text style={styles.timeExplanation}>{timeExplanation}</Text>}
+
           <View style={styles.bottom}>
             <Pressable
               accessibilityRole="button"
-              onPress={() => onContinue?.(selectedSchedule)}
+              onPress={() => {
+                const days = daysFor(selectedSchedule);
+                if (days.length === 0) {
+                  Alert.alert("Choose at least one day", "Select at least one day before continuing.");
+                  return;
+                }
+                onContinue?.({id: selectedSchedule, days, startMinute, endMinute});
+              }}
               style={({ pressed }) => [
                 styles.continueButton,
                 pressed && styles.pressed,
@@ -288,4 +388,17 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.8,
   },
+  timeRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 },
+  timeChoice: { flex: 1, minHeight: 48, backgroundColor: finiteColors.surface, borderRadius: 12, paddingHorizontal: 13, justifyContent: "center" },
+  timeLabel: { color: finiteColors.secondaryText, fontSize: 10 },
+  timeValue: { color: finiteColors.text, fontSize: 14, fontWeight: "600", marginTop: 2 },
+  timeDash: { color: finiteColors.secondaryText, fontSize: 16 },
+  dayPicker: { marginTop: 14, backgroundColor: finiteColors.surface, borderRadius: 14, padding: 12 },
+  dayPickerLabel: { color: finiteColors.secondaryText, fontSize: 10, marginBottom: 8 },
+  dayRow: { flexDirection: "row", justifyContent: "space-between", gap: 5 },
+  dayChoice: { flex: 1, minHeight: 34, borderRadius: 9, borderWidth: 1, borderColor: finiteColors.divider, alignItems: "center", justifyContent: "center" },
+  dayChoiceSelected: { backgroundColor: finiteColors.primary, borderColor: finiteColors.primary },
+  dayText: { color: finiteColors.secondaryText, fontSize: 10, fontWeight: "600" },
+  dayTextSelected: { color: finiteColors.surface },
+  timeExplanation: { color: finiteColors.secondaryText, fontSize: 11, lineHeight: 16, marginTop: 8 },
 });

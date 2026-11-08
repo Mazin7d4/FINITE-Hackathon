@@ -3,6 +3,8 @@ package app.finite.data
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import java.util.Calendar
+import java.util.Date
 import app.finite.accessibility.ShortsCounter
 import app.finite.accessibility.ShortsObservation
 import app.finite.accessibility.ShortsScroll
@@ -74,20 +76,84 @@ class ShortsSessionIntegrationTest {
         }
     }
 
-    @Test fun freshSessionAndExplicitCounterResetClearState() {
+    @Test fun restartingSessionPreservesDailyCountAndClearsAcknowledgement() {
         mockConstruction(Intent::class.java, withSettings().defaultAnswer(RETURNS_SELF)).use {
             val store = SessionStore(memoryContext())
             val counter = ShortsCounter()
             store.start(1)
             store.increment(counter.update(ShortsObservation(ShortsViewer.CONFIRMED), 0).incrementReason!!)
             store.acknowledgeLimit()
-            counter.reset() // Service reset receiver executes this before bridge startup.
+            counter.reset() // Detector state resets; persisted daily totals survive session restart.
             store.start(2)
-            assertEquals(0, store.snapshot().count)
-            assertFalse(store.snapshot().limitAcknowledged)
-            assertFalse(store.increment(counter.update(ShortsObservation(ShortsViewer.CONFIRMED), 1)
-                .incrementReason!!).shouldShowLimit)
+            // A new session clears acknowledgement, but the local-day total remains at one.
             assertEquals(1, store.snapshot().count)
+            assertFalse(store.snapshot().limitAcknowledged)
+            assertTrue(store.increment(counter.update(ShortsObservation(ShortsViewer.CONFIRMED), 1)
+                .incrementReason!!).shouldShowLimit)
+            assertEquals(2, store.snapshot().count)
+        }
+    }
+
+    @Test fun disabledAppCannotIncrementOrTriggerLimit() {
+        mockConstruction(Intent::class.java, withSettings().defaultAnswer(RETURNS_SELF)).use {
+            val store = SessionStore(memoryContext())
+            store.configure(1, setOf(SessionStore.INSTAGRAM), SessionStore.ALL_DAYS_MASK, 0, 0)
+            store.start(1)
+            val result = store.increment(SessionStore.YOUTUBE, "disabled YouTube")
+            assertEquals(0, result.state.count)
+            assertFalse(result.shouldShowLimit)
+        }
+    }
+
+    @Test fun limitOverlayPolicyNormalizesPackagesAndHonorsSelectionAndSchedule() {
+        mockConstruction(Intent::class.java, withSettings().defaultAnswer(RETURNS_SELF)).use {
+            val now = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 12)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val store = SessionStore(memoryContext()) { Date(now.timeInMillis) }
+            store.configure(
+                5,
+                setOf(SessionStore.INSTAGRAM),
+                SessionStore.ALL_DAYS_MASK,
+                9 * 60,
+                17 * 60,
+            )
+
+            // Selected Android package is allowed while the schedule is active.
+            assertTrue(store.canShowLimitFor("com.instagram.android"))
+            // An unselected Android package is rejected even during the active window.
+            assertFalse(store.canShowLimitFor("com.google.android.youtube"))
+
+            now.set(Calendar.HOUR_OF_DAY, 18)
+            // Selection does not override an inactive schedule.
+            assertFalse(store.canShowLimitFor("com.instagram.android"))
+            assertFalse(store.canShowLimitFor("com.google.android.youtube"))
+        }
+    }
+
+    @Test fun activeSessionResetsAcknowledgementAtLocalMidnight() {
+        mockConstruction(Intent::class.java, withSettings().defaultAnswer(RETURNS_SELF)).use {
+            val day = Calendar.getInstance().apply {
+                set(2026, Calendar.JANUARY, 12, 23, 59, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val store = SessionStore(memoryContext()) { Date(day.timeInMillis) }
+            store.configure(1, SessionStore.SUPPORTED_APPS, SessionStore.ALL_DAYS_MASK, 0, 0)
+            store.start(1)
+            assertTrue(store.increment("before midnight").shouldShowLimit)
+            store.acknowledgeLimit()
+
+            day.add(Calendar.MINUTE, 2)
+            val nextDay = store.snapshot()
+
+            assertTrue(nextDay.active)
+            assertEquals(0, nextDay.count)
+            assertFalse(nextDay.limitAcknowledged)
+            assertEquals("Session active — waiting for Reels or Shorts", nextDay.detectorStatus)
+            assertTrue(store.increment("after midnight").shouldShowLimit)
         }
     }
 
@@ -108,6 +174,9 @@ class ShortsSessionIntegrationTest {
         `when`(preferences.getString(anyString(), nullable(String::class.java))).thenAnswer {
             values[it.getArgument<String>(0)] ?: it.getArgument<String?>(1)
         }
+        `when`(preferences.getStringSet(anyString(), nullable(Set::class.java as Class<MutableSet<String>>))).thenAnswer {
+            values[it.getArgument<String>(0)] ?: it.getArgument<Set<*>>(1)?.filterIsInstance<String>()?.toSet()
+        }
         `when`(editor.putInt(anyString(), anyInt())).thenAnswer {
             values[it.getArgument<String>(0)] = it.getArgument<Int>(1); editor
         }
@@ -116,6 +185,9 @@ class ShortsSessionIntegrationTest {
         }
         `when`(editor.putString(anyString(), anyString())).thenAnswer {
             values[it.getArgument<String>(0)] = it.getArgument<String>(1); editor
+        }
+        `when`(editor.putStringSet(anyString(), anySet())).thenAnswer {
+            values[it.getArgument<String>(0)] = it.getArgument<Set<String>>(1); editor
         }
         return context
     }

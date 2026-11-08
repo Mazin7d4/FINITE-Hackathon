@@ -72,9 +72,13 @@ function FiniteApp({initialLimit, onBack}: {initialLimit?: number; onBack?: () =
     const appSubscription = AppState.addEventListener('change', nextState => {
       if (nextState === 'active') refreshState();
     });
+    const refreshTimer = setInterval(() => {
+      if (AppState.currentState === 'active') refreshState();
+    }, STATE_REFRESH_INTERVAL_MS);
     return () => {
       stateSubscription.remove();
       appSubscription.remove();
+      clearInterval(refreshTimer);
     };
   }, [refreshState]);
 
@@ -244,6 +248,8 @@ function FiniteApp({initialLimit, onBack}: {initialLimit?: number; onBack?: () =
     </LinearGradient>
   );
 }
+
+const STATE_REFRESH_INTERVAL_MS = 60_000;
 
 export default function FiniteScreen({initialLimit, onBack}: {initialLimit?: number; onBack?: () => void}): React.JSX.Element {
   return <FiniteApp initialLimit={initialLimit} onBack={onBack} />;
